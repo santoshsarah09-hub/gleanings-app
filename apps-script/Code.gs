@@ -50,18 +50,31 @@ function getStatus() {
   });
 }
 function setKey(key) {
-  key = String(key || '').trim();
-  if (!/^sk-ant-/.test(key)) throw new Error('[bad_request] That does not look like an Anthropic API key (it starts with sk-ant-).');
-  const r = UrlFetchApp.fetch(CFG.API, {
-    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-    payload: JSON.stringify({ model: CFG.MODELS.quick, max_tokens: 5, messages: [{ role: 'user', content: 'Say ok' }] })
-  });
-  const c = r.getResponseCode();
-  if (c === 401 || c === 403) throw new Error('[not_granted] Anthropic rejected that key. Copy it again from console.anthropic.com.');
-  if (c >= 400 && c !== 429 && c !== 529) throw new Error('[tool_error] Anthropic answered ' + c + ': ' + r.getContentText().slice(0, 300));
-  PropertiesService.getUserProperties().setProperty('ANTHROPIC_KEY', key);
-  return 'ok';
+  key = String(key || '').replace(/[\s​-‍﻿]+/g, ''); // drop spaces, line breaks and invisible characters from phone pasting
+  if (!/^sk-ant-/.test(key)) throw new Error('[bad_request] That does not look like an Anthropic API key (it starts with sk-ant-api03-).');
+  const shape = 'Your key starts with ' + key.slice(0, 13) + '… and is ' + key.length + ' characters long. ';
+  let last = '';
+  for (const model of [CFG.MODELS.quick, CFG.MODELS.default]) {
+    const r = UrlFetchApp.fetch(CFG.API, {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      payload: JSON.stringify({ model: model, max_tokens: 5, messages: [{ role: 'user', content: 'Say ok' }] })
+    });
+    const c = r.getResponseCode();
+    let why = '';
+    try { const j = JSON.parse(r.getContentText()); why = (j.error && (j.error.type + ': ' + j.error.message)) || ''; } catch (e) { why = r.getContentText().slice(0, 200); }
+    if (c < 400 || c === 429 || c === 529) {
+      PropertiesService.getUserProperties().setProperty('ANTHROPIC_KEY', key);
+      return 'ok';
+    }
+    last = 'Anthropic answered ' + c + ' (' + why + '). ' + shape;
+    if (c === 404) continue; // that model is not available to this key; try the next one
+    if (c === 401) throw new Error('[not_granted] ' + last + 'A 401 means the key itself is wrong, disabled or deleted: check it says Active in Settings → API keys, or create a new one.');
+    if (c === 403) throw new Error('[not_granted] ' + last + 'A 403 means the account is not allowed yet: check Billing has credit and any verification is finished.');
+    if (c === 400 && /credit|billing|balance/i.test(why)) throw new Error('[not_granted] ' + last + 'Add credit under Settings → Billing, then try again.');
+    throw new Error('[tool_error] ' + last);
+  }
+  throw new Error('[tool_error] ' + last);
 }
 function clearKey() { PropertiesService.getUserProperties().deleteProperty('ANTHROPIC_KEY'); return 'ok'; }
 
