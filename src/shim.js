@@ -96,6 +96,9 @@
     status:async()=>JSON.parse(await GS("getStatus")),
     setKey:k=>GS("setKey",k),
     clearKey:()=>GS("clearKey"),
+    setGeminiKey:k=>GS("setGeminiKey",k),
+    clearGeminiKey:()=>GS("clearGeminiKey"),
+    setProvider:p=>GS("setProvider",p),
     importNotes:arr=>GS("dbImport",JSON.stringify(arr)).then(n=>{refresh();return n})
   };
 })();

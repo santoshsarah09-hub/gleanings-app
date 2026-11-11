@@ -42,7 +42,10 @@ function doGet() {
 function getStatus() {
   const up = PropertiesService.getUserProperties();
   return JSON.stringify({
-    hasKey: !!up.getProperty('ANTHROPIC_KEY'),
+    hasKey: provider_() === 'gemini' ? true : !!up.getProperty('ANTHROPIC_KEY'),
+    provider: provider_(),
+    hasAnthropicKey: !!up.getProperty('ANTHROPIC_KEY'),
+    hasGeminiKey: !!up.getProperty('GEMINI_KEY'),
     url: ScriptApp.getService().getUrl(),
     email: Session.getActiveUser().getEmail(),
     usage: JSON.parse(up.getProperty('usage_' + month_()) || '{}'),
@@ -81,6 +84,7 @@ function clearKey() { PropertiesService.getUserProperties().deleteProperty('ANTH
 /* -------------------------------------------------------------------- AI */
 function aiCall(reqJson) {
   const req = JSON.parse(reqJson);
+  if (provider_() === 'gemini') return geminiCall_(req);
   const key = PropertiesService.getUserProperties().getProperty('ANTHROPIC_KEY');
   if (!key) throw new Error('[not_granted] Add your Anthropic API key in Settings.');
   const body = {
@@ -340,3 +344,123 @@ function month_() { return Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM'); 
 
 /* Run this once from the editor (select "setup", press Run) to grant access. */
 function setup() { sheet_(); photoFolder_(); return getStatus(); }
+
+/* ------------------------------------------------------------ Gemini (optional AI provider) */
+const GEM = {
+  BASE: 'https://generativelanguage.googleapis.com/v1beta/models/',
+  MODELS: { quick: 'gemini-3.1-flash-lite-preview', default: 'gemini-3-flash-preview', complex: 'gemini-3-flash-preview' },
+  FALLBACK: 'gemini-2.5-flash'
+};
+function provider_() {
+  const up = PropertiesService.getUserProperties();
+  return up.getProperty('AI_PROVIDER') === 'gemini' && up.getProperty('GEMINI_KEY') ? 'gemini' : 'anthropic';
+}
+function gemFetch_(model, key, body) {
+  return UrlFetchApp.fetch(GEM.BASE + model + ':generateContent', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { 'x-goog-api-key': key }, payload: JSON.stringify(body)
+  });
+}
+function setGeminiKey(key) {
+  key = String(key || '').replace(/[\s​-‍﻿]+/g, '');
+  if (key.length < 20) throw new Error('[bad_request] That does not look like a Gemini API key. Create one at aistudio.google.com → Get API key.');
+  const body = { contents: [{ role: 'user', parts: [{ text: 'Say ok' }] }], generationConfig: { maxOutputTokens: 20 } };
+  let last = '';
+  for (const model of [GEM.MODELS.default, GEM.FALLBACK]) {
+    const r = gemFetch_(model, key, body), c = r.getResponseCode();
+    let why = ''; try { const j = JSON.parse(r.getContentText()); why = (j.error && j.error.message) || ''; } catch (e) { why = r.getContentText().slice(0, 200); }
+    if (c < 400 || c === 429) {
+      const up = PropertiesService.getUserProperties();
+      up.setProperty('GEMINI_KEY', key); up.setProperty('AI_PROVIDER', 'gemini');
+      return 'ok';
+    }
+    last = 'Google answered ' + c + ' (' + why.slice(0, 160) + '). ';
+    if (c === 404) continue;
+    if (c === 400 && /API key/i.test(why)) throw new Error('[not_granted] ' + last + 'The key looks wrong. Copy it again from aistudio.google.com.');
+    if (c === 401 || c === 403) throw new Error('[not_granted] ' + last + 'The key was rejected or is not allowed for this model.');
+    throw new Error('[tool_error] ' + last);
+  }
+  throw new Error('[tool_error] ' + last);
+}
+function clearGeminiKey() {
+  const up = PropertiesService.getUserProperties();
+  up.deleteProperty('GEMINI_KEY'); up.deleteProperty('AI_PROVIDER'); return 'ok';
+}
+function setProvider(p) {
+  const up = PropertiesService.getUserProperties();
+  if (p === 'gemini') {
+    if (!up.getProperty('GEMINI_KEY')) throw new Error('[bad_request] Add a Gemini key first.');
+    up.setProperty('AI_PROVIDER', 'gemini');
+  } else up.setProperty('AI_PROVIDER', 'anthropic');
+  return 'ok';
+}
+function gemSchema_(s) {
+  if (!s || typeof s !== 'object') return s;
+  if (Array.isArray(s)) return s.map(gemSchema_);
+  const out = {};
+  Object.keys(s).forEach(function (k) {
+    if (['additionalProperties', '$schema', 'default', 'examples', 'title', '$id', 'definitions', '$defs'].indexOf(k) >= 0) return;
+    let v = s[k];
+    if (k === 'type') {
+      if (Array.isArray(v)) { const nn = v.filter(function (t) { return t !== 'null'; }); if (v.length > nn.length) out.nullable = true; v = nn[0] || 'string'; }
+      out.type = String(v).toUpperCase(); return;
+    }
+    if (k === 'properties') { out.properties = {}; Object.keys(v).forEach(function (p) { out.properties[p] = gemSchema_(v[p]); }); return; }
+    out[k] = gemSchema_(v);
+  });
+  return out;
+}
+function geminiCall_(req) {
+  const up = PropertiesService.getUserProperties(), key = up.getProperty('GEMINI_KEY');
+  const names = {};
+  (req.messages || []).forEach(function (m) { if (Array.isArray(m.content)) m.content.forEach(function (b) { if (b.type === 'tool_use') names[b.id] = b.name; }); });
+  const contents = (req.messages || []).map(function (m) {
+    const parts = [];
+    if (typeof m.content === 'string') parts.push({ text: m.content });
+    else (m.content || []).forEach(function (b) {
+      if (b.type === 'text') parts.push({ text: b.text || '' });
+      else if (b.type === 'image' && b.source) parts.push({ inlineData: { mimeType: b.source.media_type || 'image/jpeg', data: b.source.data } });
+      else if (b.type === 'tool_use') { const p = { functionCall: { name: b.name, args: b.input || {} } }; if (b._sig) p.thoughtSignature = b._sig; parts.push(p); }
+      else if (b.type === 'tool_result') {
+        let resp; try { resp = JSON.parse(b.content); } catch (e) { resp = b.content; }
+        if (resp === null || typeof resp !== 'object' || Array.isArray(resp)) resp = { result: resp };
+        parts.push({ functionResponse: { name: names[b.tool_use_id] || 'tool', response: resp } });
+      }
+    });
+    return { role: m.role === 'assistant' ? 'model' : 'user', parts: parts.length ? parts : [{ text: '' }] };
+  });
+  const body = { contents: contents, generationConfig: { maxOutputTokens: req.max_tokens || 4096 } };
+  if (req.system) body.systemInstruction = { parts: [{ text: typeof req.system === 'string' ? req.system : JSON.stringify(req.system) }] };
+  if (req.tools && req.tools.length) body.tools = [{ functionDeclarations: req.tools.map(function (t) {
+    const d = { name: t.name, description: t.description || t.name };
+    const sc = gemSchema_(t.input_schema);
+    if (sc && sc.properties && Object.keys(sc.properties).length) d.parameters = sc;
+    return d;
+  }) }];
+  let model = GEM.MODELS[req.tier] || GEM.MODELS.default;
+  let r = gemFetch_(model, key, body);
+  if (r.getResponseCode() === 404 && model !== GEM.FALLBACK) { model = GEM.FALLBACK; r = gemFetch_(model, key, body); }
+  const code = r.getResponseCode(), text = r.getContentText();
+  if (code === 400 && /API key/i.test(text)) throw new Error('[not_granted] Your Gemini key was rejected. Check it in Settings.');
+  if (code === 401 || code === 403) throw new Error('[not_granted] Your Gemini key was rejected. Check it in Settings.');
+  if (code === 429 || code === 503) throw new Error('[rate_limited] The AI is busy or the free limit was reached. Try again in a minute.');
+  if (code >= 400) throw new Error('[tool_error] AI error ' + code + ': ' + text.slice(0, 300));
+  const j = JSON.parse(text), cand = j.candidates && j.candidates[0];
+  if (!cand || !cand.content || !cand.content.parts) throw new Error('[tool_error] Gemini returned no answer' + (j.promptFeedback && j.promptFeedback.blockReason ? ' (' + j.promptFeedback.blockReason + ')' : '') + '.');
+  const content = []; let tool = false;
+  cand.content.parts.forEach(function (p) {
+    if (p.thought) return;
+    if (p.functionCall) { tool = true; content.push({ type: 'tool_use', id: 'g' + Utilities.getUuid().slice(0, 12), name: p.functionCall.name, input: p.functionCall.args || {}, _sig: p.thoughtSignature }); }
+    else if (typeof p.text === 'string' && p.text) content.push({ type: 'text', text: p.text });
+  });
+  const um = j.usageMetadata || {};
+  const out = { content: content, stop_reason: tool ? 'tool_use' : (cand.finishReason === 'MAX_TOKENS' ? 'max_tokens' : 'end_turn'),
+    usage: { input_tokens: um.promptTokenCount || 0, output_tokens: (um.candidatesTokenCount || 0) + (um.thoughtsTokenCount || 0) } };
+  try {
+    const k = 'usage_' + month_(), u = JSON.parse(up.getProperty(k) || '{}');
+    u[model] = u[model] || { in: 0, out: 0, calls: 0 };
+    u[model].in += out.usage.input_tokens; u[model].out += out.usage.output_tokens; u[model].calls += 1;
+    up.setProperty(k, JSON.stringify(u));
+  } catch (e) {}
+  return JSON.stringify(out);
+}
