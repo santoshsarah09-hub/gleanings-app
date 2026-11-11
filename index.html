@@ -1,4 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#14213D"></head><body>
+<script>(function(){var b;function show(m){try{if(!b){b=document.createElement("div");b.style.cssText="position:fixed;z-index:99999;left:0;right:0;bottom:60px;background:#fee;color:#900;font:12px monospace;padding:8px;white-space:pre-wrap;max-height:40vh;overflow:auto";document.body.appendChild(b)}b.textContent+=m+"\n"}catch(e){}}
+window.addEventListener("error",function(e){show("ERR "+e.message+" @"+(e.lineno||"")+":"+(e.colno||""))});window.addEventListener("unhandledrejection",function(e){show("REJ "+(e.reason&&(e.reason.stack||e.reason.message||e.reason)))});})();</script>
 <script>/* Gleanings standalone bridge: gives the app the same window.claude.use(...) it had inside Claude,
    but backed by your own Google Apps Script server and your own Anthropic API key. */
 (function(){
