@@ -372,7 +372,13 @@ details summary{list-style:none}
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);
   padding-left:max(8px,env(safe-area-inset-left,0px));padding-right:max(8px,env(safe-area-inset-right,0px));
   padding-top:4px;padding-bottom:calc(6px + env(safe-area-inset-bottom,0px))}
-.tabs .wrap{display:grid;grid-template-columns:repeat(6,1fr);gap:2px}
+.tabs .wrap{display:grid;grid-template-columns:repeat(7,1fr);gap:1px}
+.tabs .tab{font-size:.68rem;padding-left:0;padding-right:0}
+.tabs .tab svg{width:20px;height:20px}
+.st-ta{min-height:84px;font-size:1rem}
+#v-study .card a{color:var(--accent-strong)}
+.st-card{text-align:left;font:inherit;color:inherit;cursor:pointer;width:100%}
+.st-card:active{background:var(--surface-2)}
 @media (max-width:360px){.tab{font-size:.68rem}.tab svg{width:20px;height:20px}}
 .tab{position:relative;font:inherit;background:none;border:0;padding:9px 2px 6px;border-radius:10px;cursor:pointer;color:var(--muted);font-weight:500;font-size:.74rem;
   display:flex;flex-direction:column;align-items:center;gap:3px}
@@ -770,6 +776,13 @@ details summary{list-style:none}
   <div class="list" id="notesList"></div>
 </section>
 
+<!-- STUDY (private) -->
+<section class="view" id="v-study" hidden>
+  <div><p class="label" id="stEyebrow" style="margin:0 0 6px"></p><h2 id="stTitle"></h2><p class="sub" id="stSub"></p></div>
+  <div id="stBody" class="view"></div>
+  <p class="status" id="stStatus" aria-live="polite">Private to you. No patient or family names.</p>
+</section>
+
 <!-- REVIEW -->
 <section class="view" id="v-used" hidden>
   <div><h2>Used stories</h2><p class="sub" id="usedCount"></p></div>
@@ -837,6 +850,7 @@ details summary{list-style:none}
   <button class="tab" data-view="ask"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 5h16v11H9l-5 4z"/><path d="M10 9.5a2 2 0 1 1 2.5 1.9V12M12 14.2v.1"/></svg>Ask</button>
   <button class="tab" data-view="review"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>Review</button>
   <button class="tab" data-view="used"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M8.2 12.3l2.6 2.6 5-5.4"/></svg>Used</button>
+<button class="tab" data-view="study"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5C6.5 4 9.5 4 12 5.5v14C9.5 18 6.5 18 4 19.5zM20 5.5C17.5 4 14.5 4 12 5.5v14c2.5-1.5 5.5-1.5 8 0z"/></svg>Study</button>
 </div></nav>
 
 <div class="toast" id="toast" hidden></div>
@@ -2841,20 +2855,21 @@ function renderFollow(){
   const tab=document.querySelector('.tab[data-view="follow"]');const lateN=open.filter(n=>n.followAt<Date.now()).length;
   tab.lastChild.textContent=lateN?`Follow-ups (${lateN})`:"Follow-ups";
 }
-function renderAll(){renderNotes();renderReview();renderFollow();try{renderWeek()}catch(e){}try{renderUsed()}catch(e){}}
+function renderAll(){renderNotes();renderReview();renderFollow();try{renderWeek()}catch(e){}try{renderUsed()}catch(e){}try{renderStudyLight()}catch(e){}}
 document.addEventListener("input",e=>{if(e.target&&e.target.id==="usedQ")renderUsed()});
 
 $("#q").addEventListener("input",e=>{state.q=e.target.value;renderNotes()});
 
 function show(v){
-  ["capture","notes","ask","follow","review","used"].forEach(x=>{$("#v-"+x).hidden=x!==v});
+  ["capture","notes","ask","follow","review","used","study"].forEach(x=>{$("#v-"+x).hidden=x!==v});
   document.querySelectorAll(".tab").forEach(t=>{if(t.dataset.view===v)t.setAttribute("aria-current","page");else t.removeAttribute("aria-current")});
   if(location.hash!=="#"+v)window.history.replaceState(null,"","#"+v);
   window.scrollTo(0,0);
   if(v==="follow")try{syncCal(false)}catch(e){}
+  if(v==="study")try{STUDY.sel=null;renderStudy()}catch(e){}
 }
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>show(t.dataset.view));
-window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(["capture","notes","ask","follow","review","used"].includes(h))show(h)});
+window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(["capture","notes","ask","follow","review","used","study"].includes(h))show(h)});
 
 /* ---------- assistant ---------- */
 let sampleFn=null,askCtl=null,history=[];
@@ -2956,8 +2971,387 @@ $("#askBtn").onclick=async()=>{
 $("#askStop").onclick=()=>{if(askCtl)askCtl.abort()};
 $("#askClear").onclick=()=>{history=[];$("#askTxt").value="";$("#askAnswer").hidden=true;$("#askAnswer").innerHTML="";$("#askProgress").textContent="";$("#askClear").hidden=true;$("#askBtn").disabled=true;$("#askTxt").focus()};
 
+const STUDY={entries:[],plans:[],set:null,sel:null,view:"home",pid:null,k:null,form:null,pend:{},base:{},timers:{},adding:{}};
+/* ---------- Friedman & Bowen study ---------- */
+const FB_DAYS=81,FB_GUIDE="https://docs.google.com/document/d/1WiNSngQqYUk4GLg_d5vUmBmcjFMpBXAHyPAYRfwH88c/edit";
+const FB_REVIEW=["What pattern did I see in myself this week?","Whose anxiety did I carry that was not mine?","Where did I take a clear position calmly? What happened?","What did my family notice, if anything?","What is next week’s one practice?"];
+const FB_WEEKS=[
+{t:"Steadiness",p:"Notice when the room’s anxiety rises. Take one slow breath before you respond.",d:["Philippians 4:6-7|Where do I feel the pull to be anxious today, and what is mine versus the system’s?","Isaiah 26:3|Who around me is most anxious, and can I stay calm and connected with them?","Psalm 46:1-3, 10|What can I leave unfixed today and still keep my peace?","Matthew 6:25-34|What am I worrying about that I cannot control?","Mark 4:35-41|Where might a storm hit this week, and how will I respond before it breaks?","John 14:27|Whose anxiety am I carrying that I should hand back?","2 Timothy 1:7|Where would power, love and self-discipline change how I lead today?"]},
+{t:"A Defined Self",p:"State where you stand once, calmly, without needing anyone’s agreement.",d:["Mark 1:35-38|What is being demanded of me today that is not my assignment?","Matthew 4:1-11|What voice is trying to define me today, and what has God said about me?","John 2:23-25|Whose approval am I leaning on?","Matthew 16:21-23|Who is well-meaning but pulling me away from my calling?","John 6:60-69|Can I stay faithful when people walk away?","Luke 9:51-56|Where do I need to set my face and not be pulled off by someone’s offense?","Luke 22:39-46|What do I need to pray through before I act?"]},
+{t:"Responsibility for Self",p:"Let one person carry their own problem this week. Do not rescue. Stay kind and present.",d:["Galatians 6:1-5|What load is mine to carry, and what belongs to someone else?","Proverbs 4:23|What is getting into my heart that I should guard against?","Matthew 7:1-5|What am I trying to fix in others that I need to deal with in myself?","Romans 14:10-13|Who am I trying to change who I should simply love?","Romans 12:17-18|Where I cannot control the outcome, what is my part in peace?","Philippians 2:12-13|What is mine to work out this week?","James 1:19-20|Where do I need to be slower to speak and slower to anger today?"]},
+{t:"Courage and Vision",p:"Make one decision you have been postponing because someone will be unhappy. Do it kindly and without apology.",d:["Joshua 1:6-9|What decision am I postponing because someone will be unhappy?","Nehemiah 6:1-9|What great work am I doing that I should not come down from?","Numbers 14:6-9|Who around me sees only the giants?","1 Samuel 17:32-37|What past faithfulness of God steadies me for today?","2 Chronicles 20:15-17|What battle am I fighting that is not mine?","Daniel 3:16-18|What would I do if I stopped needing a certain outcome?","Acts 4:18-20|What can I not stop saying or doing, no matter the pressure?"]},
+{t:"Triangles",p:"When someone vents to you about a third person, ask kindly, “Have you talked with them?” Stay out of the middle.",d:["Matthew 18:15-17|Who do I need to speak with directly instead of talking about?","Numbers 12:1-15|Where am I being pulled into a conflict between two other people?","Proverbs 26:17|Which quarrel am I tempted to grab by the ears?","Proverbs 17:9|What should I cover with love rather than repeat?","Proverbs 18:8|Where did I take in gossip, and how do I close that loop?","Galatians 2:11-14|Who needs a direct, respectful word from me?","1 Samuel 24:1-15|How do I answer someone who hurt me without becoming like them?"]},
+{t:"Husband and Dad",p:"One unhurried, phone-free conversation with your wife. One with each child where you listen first and direct second.",d:["Ephesians 5:25-33|What do I bring home from work that my wife carries?","Ephesians 6:1-4|Am I leading my children with calm clarity or with reactivity?","Colossians 3:12-21|Which of these qualities will I put on at home today?","Deuteronomy 6:4-9|What am I teaching my children by how I actually live?","1 Peter 3:7|What can I understand about my wife today that I have missed?","Proverbs 22:6|What does each child need from me that is different from the others?","Psalm 127:1-3|What am I building in my own strength that I should hand to God?"]},
+{t:"Presence",p:"Be fully present at each Christmas gathering. If tension rises, stay calm and stay connected.",d:["Luke 2:8-20|Where do I need to show up quietly rather than fix something?","John 1:1-14|God entered an anxious world and stayed. How do I stay present with the people near me?","Philippians 2:5-8|Where can I serve without losing myself?","Hebrews 4:14-16|Do I come to Him first, or last, when I am under pressure?","Isaiah 9:6-7|What would change if I believed the government rests on His shoulders?","Matthew 1:18-25|What am I being asked to trust God with that I cannot explain?","Luke 1:26-38|What am I being asked to receive rather than control?"]},
+{t:"The Chaplain",p:"In one visit, say less, stay longer, and do not fix.",d:["Job 2:11-13|Can I sit with someone’s pain without explaining it?","Romans 12:15|Whose joy or grief am I called to share today?","Psalm 34:17-18|Who will I meet who is brokenhearted, and how do I bring them nearness, not answers?","John 11:17-35|Can I weep with those who weep, even when I know how the story ends?","2 Corinthians 1:3-5|What comfort have I received that I can pass on?","Galatians 6:2|Whose burden is mine to share this week?","Luke 24:13-32|Can I walk beside someone and ask questions before I give answers?"]},
+{t:"The Shepherd",p:"Name one place where you over-function or rescue. Hand one responsibility back to the person it belongs to.",d:["John 10:11-15|Am I acting as a shepherd or as a hired hand today?","1 Peter 5:1-4|Am I leading willingly, or under pressure?","Acts 20:28-31|Who am I watching over, including myself?","Numbers 11:10-17|What am I trying to carry alone?","Exodus 18:13-24|Who can I train and release to share the load?","1 Kings 19:1-18|What do my body and soul need before the next assignment?","Ezekiel 34:1-6|Who is scattered or neglected that I have overlooked?"]},
+{t:"Endurance and Pushback",p:"Expect resistance when you lead from conviction. When it comes, stay put, stay calm, stay connected.",d:["Hebrews 12:1-3|What weight is slowing me down?","Galatians 6:9-10|Where am I tempted to quit doing good?","1 Corinthians 15:58|What work have I done that does not feel fruitful yet?","Romans 5:1-5|What is this season producing in me?","Exodus 14:10-14|Where are people saying “go back” while God says “stand still”?","Nehemiah 4:13-23|How do I keep building with my sword at my side?","2 Corinthians 4:7-18|What is being renewed in me while the outside is hard?"]},
+{t:"The Inner Life",p:"10 quiet minutes a day with no input: no phone, no podcast, no book.",d:["Psalm 1|Where am I planted, and what am I drinking from?","Psalm 139:1-6, 23-24|What does God see in me that I have not looked at?","Psalm 131|Where can I quiet my soul instead of pushing harder?","Isaiah 40:28-31|Where am I weary, and where do I need to wait?","Luke 5:15-16|When do I withdraw to pray while the demands keep growing?","Psalm 63:1-8|What do I thirst for most?","Ephesians 3:14-21|What would it look like to be rooted and grounded in love?"]},
+{t:"Review and 2027",p:"Look back over the 11 weeks. Decide what rhythm continues into 2027.",d:["Psalm 90:12-17|Looking back, what has changed in how I respond under pressure?","Lamentations 3:22-26|Where have I seen God’s mercy in my failures?","Joshua 24:14-15|What do I commit to for my household and my work in 2027?","Philippians 3:12-14|What is the next step forward?"]}
+];
+const fbEsc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fbKey=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const fbDate=i=>new Date(2026,10,12+i);
+const fbIdx=k=>{const [y,m,d]=k.split("-").map(Number);return Math.round((new Date(y,m-1,d)-new Date(2026,10,12))/864e5)};
+const fbWt=i=>{const w=fbDate(i).getDay();return w===0||w===6?2:1};
+const fbPages=i=>fbWt(i)*8;
+const fbMin=i=>{const w=fbDate(i).getDay();return w===0?75:w===6?55:45};
+function fbReading(i){
+  if(i<28){let c=0;for(let k=0;k<i;k++)c+=fbPages(k);return {book:"A Failure of Nerve",from:c+1,to:c+fbPages(i),n:fbPages(i),known:true,phase:1}}
+  const tot=STUDY.set&&Number(STUDY.set.g2g)>0?Number(STUDY.set.g2g):0;
+  let all=0,before=0;for(let k=28;k<FB_DAYS;k++){all+=fbWt(k);if(k<i)before+=fbWt(k)}
+  if(!tot)return {book:"Generation to Generation",known:false,phase:2};
+  const pace=tot/all,f=Math.round(pace*before),t=Math.round(pace*(before+fbWt(i)));
+  return {book:"Generation to Generation",from:f+1,to:t,n:t-f,known:true,phase:2};
+}
+const ekey=e=>e.study==='pe'?e.planId+'|'+e.k:e.date;
+const studyEntry=k=>STUDY.entries.find(e=>ekey(e)===k);
+const fbEntries=()=>STUDY.entries.filter(e=>e.study==='fb');
+const FB_FIELDS=["work","reactive","steady","tomorrow","rv1","rv2","rv3","rv4","rv5"];
+const studyHas=e=>!!e&&([...FB_FIELDS,"q0","q1","q2","q3","q4"].some(f=>String(e[f]||"").trim())||e.readDone||e.done);
+async function studyFlush(key){
+  const patch=STUDY.pend[key],base=STUDY.base[key];delete STUDY.pend[key];if(!patch||!store)return;
+  const st=$("#stStatus");
+  try{
+    const e=studyEntry(key);
+    if(e){await store.update(e.id,patch);Object.assign(e,patch)}
+    else if(STUDY.adding[key]){await STUDY.adding[key];const e2=studyEntry(key);if(e2){await store.update(e2.id,patch);Object.assign(e2,patch)}}
+    else{
+      const body={...base,createdAt:Date.now(),...patch};
+      STUDY.adding[key]=store.add(body).then(id=>{if(!studyEntry(key))STUDY.entries.push({...body,id});return id}).finally(()=>{delete STUDY.adding[key]});
+      await STUDY.adding[key];
+    }
+    if(st&&!Object.keys(STUDY.pend).length)st.textContent="Saved to your private notes.";
+  }catch(err){if(st)st.textContent="Couldn\u2019t save just now. Your text is still on screen; try again."}
+}
+function studyPatch(key,base,patch){
+  STUDY.base[key]=base;STUDY.pend[key]={...(STUDY.pend[key]||{}),...patch};
+  const st=$("#stStatus");if(st)st.textContent="Saving\u2026";
+  clearTimeout(STUDY.timers[key]);STUDY.timers[key]=setTimeout(()=>studyFlush(key),700);
+}
+async function studySetG2g(n){
+  try{
+    if(STUDY.set){await store.update(STUDY.set.id,{g2g:n});STUDY.set.g2g=n}
+    else{const body={study:"fb-set",private:true,createdAt:Date.now(),g2g:n};const id=await store.add(body);if(!STUDY.set)STUDY.set={...body,id}}
+    toast("Page count saved");renderFB();
+  }catch(e){toast("Couldn’t save the page count")}
+}
+function renderFB(){
+  const root=$("#stBody");if(!root)return;
+  const todayI=fbIdx(fbKey(new Date()));
+  if(!STUDY.sel)STUDY.sel=fbKey(fbDate(Math.max(0,Math.min(FB_DAYS-1,todayI))));
+  const key=STUDY.sel,i=fbIdx(key),dt=fbDate(i),wi=Math.floor(i/7),wk=FB_WEEKS[wi],[ref,q]=wk.d[i%7].split("|");
+  const ent=studyEntry(key)||{},rd=fbReading(i),dow=dt.getDay();
+  const dayName=dt.toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"});
+  const link=`https://www.biblegateway.com/passage/?search=${encodeURIComponent(ref)}&version=NASB1995`;
+  $("#stEyebrow").textContent=`Day ${i+1} of ${FB_DAYS} · Week ${wi+1}: ${wk.t}`;
+  $("#stTitle").textContent=dayName;
+  $("#stSub").textContent=todayI<0?"Starts Thursday, Nov 12. Here is day 1.":todayI>=FB_DAYS?"The 81 days are complete. Your entries are still here.":(i===todayI?"Today":i<todayI?"An earlier day":"A day ahead");
+  let read;
+  if(rd.known)read=`Read <b>${fbEsc(rd.book)}</b>, pages ${rd.from} to ${rd.to} (about ${rd.n} pages).`;
+  else read=`Read <b>${fbEsc(rd.book)}</b>. Enter the book’s page count below and I’ll set your daily pages.`;
+  const wbn=wi+1;
+  const wbNote=dow===4?`Start <b>workbook Week ${wbn}</b> tonight.`:dow===0?`Revisit <b>workbook Week ${wbn}</b> before your review.`:"";
+  const phase2=i>=28?`<div class="card"><div class="card-h"><h3>Generation to Generation</h3></div><label class="label" for="stG2g">Total pages in the book</label><input type="number" inputmode="numeric" id="stG2g" class="dt" placeholder="e.g. 320" value="${STUDY.set&&STUDY.set.g2g?fbEsc(STUDY.set.g2g):""}"><p class="status">Set once when it arrives. Weekdays get a share, weekends get double, so the book ends on Jan 31.</p></div>`:"";
+  const review=dow===0?`<div class="card"><div class="card-h"><h3>Sunday review</h3><span class="step">10 minutes</span></div>${FB_REVIEW.map((r,k)=>`<div><label class="label" for="stRv${k+1}">${k+1}. ${fbEsc(r)}</label><textarea class="st-ta" id="stRv${k+1}" data-f="rv${k+1}"></textarea></div>`).join("")}</div>`:"";
+  const done=fbEntries().filter(studyHas).length,elapsed=Math.max(0,Math.min(FB_DAYS,todayI+1));
+  const hist=fbEntries().filter(studyHas).sort((a,b)=>b.date<a.date?-1:1).slice(0,14);
+  root.innerHTML=`
+  <div class="card"><button class="btn ghost" type="button" id="stHome" style="align-self:flex-start">\u2190 All studies</button><div class="row" style="justify-content:space-between;flex-wrap:nowrap"><button class="btn ghost" type="button" id="stPrev"${i<=0?" disabled":""}>← Prev</button><button class="btn ghost" type="button" id="stToday">Today</button><button class="btn ghost" type="button" id="stNext"${i>=FB_DAYS-1?" disabled":""}>Next →</button></div></div>
+  <div class="card"><div class="card-h"><h3>This week’s practice</h3><span class="step">Week ${wi+1}</span></div><p style="margin:0">${fbEsc(wk.p)}</p></div>
+  <div class="card"><div class="card-h"><h3>Morning · 7–8 am</h3></div>
+    <div><p class="label">Scripture (NASB 1995)</p><p style="margin:0;font-family:var(--display);font-size:1.3rem;font-weight:600"><a href="${link}" target="_blank" rel="noopener" style="color:var(--accent-strong)">${fbEsc(ref)}</a></p></div>
+    <div><p class="label">Question for the day</p><p style="margin:0;font-size:1.05rem;line-height:1.5">${fbEsc(q)}</p></div>
+    <div><label class="label" for="stWork">What I noticed at work <span>(optional)</span></label><textarea class="st-ta" id="stWork" data-f="work" placeholder="A moment, a reaction, a person…"></textarea></div>
+  </div>
+  <div class="card"><div class="card-h"><h3>Evening · 5:00 pm · ${fbMin(i)} min</h3></div>
+    <p style="margin:0">${read}</p>${wbNote?`<p style="margin:0">${wbNote}</p>`:""}
+    <label class="fu-priv"><input type="checkbox" id="stRead" data-c="readDone"> I read today</label>
+    <div><label class="label" for="stRe">1. Reactive: where did I get anxious, defensive, or pulled into someone else’s anxiety?</label><textarea class="st-ta" id="stRe" data-f="reactive"></textarea></div>
+    <div><label class="label" for="stSt">2. Steady: where did I stay connected and calm, and clear about where I stand?</label><textarea class="st-ta" id="stSt" data-f="steady"></textarea></div>
+    <div><label class="label" for="stTo">3. Tomorrow: what is my one small practice?</label><textarea class="st-ta" id="stTo" data-f="tomorrow"></textarea></div>
+  </div>
+  ${review}${phase2}
+  <div class="card"><div class="card-h"><h3>Your journal</h3><span class="step">${done} of ${elapsed} days</span></div>
+    ${hist.length?hist.map(h=>`<button type="button" class="chip" data-d="${fbEsc(h.date)}" style="text-align:left;border-radius:12px;white-space:normal">${fbEsc(fbDate(fbIdx(h.date)).toLocaleDateString(undefined,{month:"short",day:"numeric"}))} · ${fbEsc(String(h.reactive||h.steady||h.tomorrow||h.work||"Read").slice(0,70))}</button>`).join(""):'<p class="sub" style="margin:0">Your entries will appear here.</p>'}
+    <p class="status" style="margin:0">Private to you. Never filed to Drive and never seen by your sermon or book tools. <a href="${FB_GUIDE}" target="_blank" rel="noopener">Open the full guide</a>.</p>
+  </div>`;
+  root.querySelectorAll("[data-f]").forEach(el=>{el.value=ent[el.dataset.f]||"";el.oninput=()=>studyPatch(key,{study:"fb",date:key,private:true},{[el.dataset.f]:el.value})});
+  const rc=root.querySelector("[data-c]");if(rc){rc.checked=!!ent.readDone;rc.onchange=()=>studyPatch(key,{study:"fb",date:key,private:true},{readDone:rc.checked})}
+  const go=n=>{STUDY.sel=fbKey(fbDate(Math.max(0,Math.min(FB_DAYS-1,n))));renderFB();window.scrollTo(0,0)};
+  $("#stHome").onclick=()=>{STUDY.view="home";renderStudy();window.scrollTo(0,0)};$("#stPrev").onclick=()=>go(i-1);$("#stNext").onclick=()=>go(i+1);$("#stToday").onclick=()=>go(todayI);
+  root.querySelectorAll("[data-d]").forEach(b=>b.onclick=()=>{STUDY.sel=b.dataset.d;renderFB();window.scrollTo(0,0)});
+  const g=$("#stG2g");if(g)g.onchange=()=>{const n=parseInt(g.value,10);if(n>0)studySetG2g(n)};
+}
+
+/* ---------- custom studies (your own plans) ---------- */
+const maxP=()=>Math.max(1,Math.min(6,Number(photoCaps&&photoCaps.maxCount)||6));
+const DOWN=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const parseD=s=>{const [y,m,d]=String(s).split("-").map(Number);return new Date(y,m-1,d)};
+const stYmd=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const planDays=p=>p.cadence==="daily"?[0,1,2,3,4,5,6]:p.cadence==="weekdays"?[1,2,3,4,5]:(p.days&&p.days.length?p.days:[parseD(p.start).getDay()]);
+function sessDate(p,k){
+  const s=parseD(p.start);
+  if(p.cadence==="monthly"){const dd=Math.max(1,Math.min(28,p.dom||s.getDate()));let m=s.getMonth();if(new Date(s.getFullYear(),m,dd)<s)m++;return new Date(s.getFullYear(),m+k,dd)}
+  const set=planDays(p),ev=p.cadence==="weekly"?(p.every||1):1;
+  const mon=new Date(s);mon.setDate(s.getDate()-((s.getDay()+6)%7));
+  const d=new Date(s);let c=-1;
+  for(let n=0;n<6000;n++){
+    const w=Math.floor(Math.round((d-mon)/864e5)/7);
+    if(set.includes(d.getDay())&&w%ev===0){c++;if(c===k)return new Date(d)}
+    d.setDate(d.getDate()+1);
+  }
+  return d;
+}
+const planTotal=p=>p.repeat==="loop"?Infinity:Math.max(1,Math.ceil(p.items.length/(p.per||1)));
+function sessItems(p,k){const per=p.per||1,n=p.items.length;const a=(k*per)%n;return p.items.slice(a,a+per)}
+function planCur(p){const t=new Date();t.setHours(0,0,0,0);let k=-1;const tot=Math.min(planTotal(p),800);for(let i=0;i<tot;i++){if(sessDate(p,i)<=t)k=i;else break}return Math.max(0,k)}
+function fmtTime(t){const [h,m]=String(t||"17:00").split(":").map(Number);return ((h+11)%12+1)+":"+pad(m)+" "+(h<12?"am":"pm")}
+const fmtDay=d=>d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"});
+const ordn=n=>n+(n%10===1&&n!==11?"st":n%10===2&&n!==12?"nd":n%10===3&&n!==13?"rd":"th");
+function cadenceText(p){
+  if(p.cadence==="daily")return "Every day";
+  if(p.cadence==="weekdays")return "Weekdays";
+  if(p.cadence==="monthly")return "Monthly on the "+ordn(p.dom||parseD(p.start).getDate());
+  return (p.every===2?"Every other ":"Every ")+planDays(p).slice().sort().map(d=>DOWN[d]).join(", ");
+}
+const KIND_Q={bible:["What does this passage say, in my own words?","What does it show me about God?","What is the one thing I will do or pray because of it?"],
+  book:["What stood out to me most?","What do I need to act on or change?","What question do I want to bring to someone else?"],
+  other:["What did I learn?","How does it apply to my life this week?","What do I want to remember?"]};
+const KIND_NAME={bible:"Bible study",book:"Book study",other:"Study"};
+const planById=id=>STUDY.plans.find(p=>p.id===id);
+const parseLines=t=>String(t||"").split("\n").map(x=>x.trim()).filter(Boolean);
+const parseItems=t=>parseLines(t).map(l=>{const i=l.indexOf(" | ");return i<0?{label:l}:{label:l.slice(0,i).trim(),detail:l.slice(i+3).trim()}});
+const itemsToText=a=>(a||[]).map(x=>x.detail?x.label+" | "+x.detail:x.label).join("\n");
+
+function planRRule(p){
+  let r;
+  if(p.cadence==="daily")r="FREQ=DAILY";
+  else if(p.cadence==="weekdays")r="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR";
+  else if(p.cadence==="monthly")r="FREQ=MONTHLY;BYMONTHDAY="+(p.dom||parseD(p.start).getDate());
+  else r="FREQ=WEEKLY;INTERVAL="+(p.every||1)+";BYDAY="+planDays(p).slice().sort().map(d=>["SU","MO","TU","WE","TH","FR","SA"][d]).join(",");
+  return r;
+}
+function planStart(p,k){const d=sessDate(p,k),[h,m]=String(p.time||"17:00").split(":").map(Number);return new Date(d.getFullYear(),d.getMonth(),d.getDate(),h,m)}
+async function planCalendar(p){
+  if(!mcp)throw {code:"no_mcp"};
+  const s=planStart(p,0),e=new Date(s.getTime()+(p.mins||30)*60000);
+  let rule=planRRule(p);
+  if(p.repeat!=="loop"){const last=planStart(p,planTotal(p)-1);rule+=";UNTIL="+last.toISOString().replace(/[-:]/g,"").replace(/\.\d+/,"")}
+  const r=await mcp.callTool("Google Calendar","create_event",{
+    summary:"Study: "+p.title,
+    description:"Open your private Study tab in Gleanings: "+(window.GLEAN_URL||"https://claude.ai/artifact/FbQzRgNbNwBv1njarcMsFJ")+"#study",
+    startTime:localStr(s)+":00",endTime:localStr(e)+":00",recurrenceData:["RRULE:"+rule],
+    visibility:"private",availability:"AVAILABILITY_FREE",overrideReminders:[{method:"popup",minutes:0}]
+  },{cache:false});
+  return (r.payload&&r.payload.id)||"";
+}
+
+function newForm(p){
+  const t=new Date();
+  return p?{id:p.id,step:"plan",title:p.title,kind:p.kind,text:"",photos:[],itemsText:itemsToText(p.items),cadence:p.cadence,days:(p.days||[]).slice(),every:p.every||1,dom:p.dom||t.getDate(),time:p.time||"17:00",mins:p.mins||30,per:p.per||1,start:p.start,repeat:p.repeat||"once",qText:(p.questions||[]).join("\n"),cal:false,calEventId:p.calEventId||""}
+  :{id:null,step:"source",title:"",kind:"bible",text:"",photos:[],itemsText:"",cadence:"daily",days:[],every:1,dom:Math.min(28,t.getDate()),time:"17:00",mins:30,per:1,start:stYmd(t),repeat:"once",qText:KIND_Q.bible.join("\n"),cal:true,calEventId:""};
+}
+function formPlan(f){
+  return {title:f.title.trim(),kind:f.kind,items:parseItems(f.itemsText),cadence:f.cadence,days:f.days.slice().sort(),every:f.every,dom:f.dom,time:f.time||"17:00",mins:f.mins,per:Math.max(1,Math.min(50,f.per||1)),start:f.start,repeat:f.repeat,questions:parseLines(f.qText).slice(0,5)};
+}
+function buildPrompt(f,nImg){
+  return `You are helping a pastor set up a personal reading and study plan.
+Name given: "${f.title.trim()||"(none)"}". Type: ${KIND_NAME[f.kind]}.
+${nImg?`The attached ${nImg} photo(s) show a table of contents, a reading list, a syllabus or pages. `:""}${f.text.trim()?`The person typed: """${f.text.trim().slice(0,6000)}"""`:""}
+Return JSON only: {"title": string, "items": [{"label": string, "detail": string}]}
+Rules:
+- One item per natural reading unit, in order: a chapter for a book, a passage or chapter for the Bible. If the person names a Bible book or passage range, list its chapters in order (split a very long chapter into sections only if it is clearly sensible), label like "Romans 3".
+- For a book, use the chapter or section titles exactly as visible, label like "Chapter 3: Title". Put page numbers in "detail" only if they are printed in the photo. Never invent titles or page numbers that are not visible or typed; if unsure leave detail empty.
+- "title" is the clean book or study title if visible or given, otherwise the name given.
+- Maximum 200 items. If nothing is readable return {"title":"","items":[]}.`;
+}
+async function buildItems(){
+  const f=STUDY.form,st=$("#pfStatus"),btn=$("#pfBuild");
+  const lines=parseLines(f.text);
+  const useAI=!!sampleFn&&(f.photos.length||(lines.length<=2&&f.text.trim()));
+  if(!f.photos.length&&!f.text.trim()){st.textContent="Add a photo or type what you are studying first.";return}
+  if(!useAI){
+    if(f.photos.length&&!sampleFn){st.textContent="Photo reading isn’t available right now. Type the list instead, one item per line.";return}
+    f.itemsText=itemsToText(parseItems(f.text));f.step="plan";renderForm();return;
+  }
+  btn.disabled=true;st.textContent=f.photos.length?"Reading your photos…":"Building your list…";
+  try{
+    const opts={modelTier:"default",cache:false};if(f.photos.length)opts.images=f.photos.slice(0,maxP()).map(p=>p.blob);
+    const r=await sampleFn.json(buildPrompt(f,Math.min(maxP(),f.photos.length)),opts);
+    const items=((r&&r.items)||[]).filter(x=>x&&x.label).slice(0,200);
+    if(!items.length){btn.disabled=false;st.textContent="I couldn’t find a list in that. Try a clearer photo of the contents page, or type the items one per line.";return}
+    if(r.title&&!f.title.trim())f.title=String(r.title).slice(0,80);
+    f.itemsText=itemsToText(items);f.step="plan";renderForm();window.scrollTo(0,0);
+  }catch(e){btn.disabled=false;st.textContent="That didn’t work just now. Try again, or type the list one item per line."}
+}
+async function addStudyPhotos(files){
+  const f=STUDY.form,st=$("#pfStatus");
+  for(const file of files){
+    if(f.photos.length>=maxP()){st.textContent="Up to "+maxP()+" photos at a time.";break}
+    try{const blob=await shrink(file);f.photos.push({blob,url:URL.createObjectURL(blob)})}catch(e){st.textContent="One photo couldn’t be opened."}
+  }
+  renderForm();
+}
+function previewLine(){
+  const f=STUDY.form,el=$("#pfPrev");if(!el)return;
+  const p=formPlan(f);if(!p.items.length||!p.title){el.textContent="";return}
+  const tot=planTotal(p),a=sessDate(p,0);
+  el.textContent=(tot===Infinity?"Repeats until you stop. ":tot+" session"+(tot>1?"s":"")+". ")+"First: "+fmtDay(a)+" at "+fmtTime(p.time)+(tot!==Infinity&&tot>1?". Last: "+fmtDay(sessDate(p,tot-1))+".":".");
+}
+function renderForm(){
+  const f=STUDY.form,root=$("#stBody");
+  $("#stEyebrow").textContent="Private to you";$("#stTitle").textContent=f.id?"Edit study":"New study";
+  $("#stSub").textContent=f.step==="source"?"Tell me what you are studying. A photo of the contents page works well.":"Check the list, then set when you want to study.";
+  const chips=(arr,sel,attr)=>arr.map(([v,l])=>`<button type="button" class="chip" ${attr}="${v}" aria-pressed="${sel(v)?"true":"false"}">${fbEsc(l)}</button>`).join("");
+  const photoOK=!!sampleFn&&!!photoCaps;
+  const src=`
+  <div class="card"><button class="btn ghost" type="button" id="pfBack" style="align-self:flex-start">← All studies</button>
+   <div><label class="label" for="pfTitle">Name</label><input type="text" id="pfTitle" placeholder="e.g. Romans, or the book title"></div>
+   <div><p class="label">Type</p><div class="row">${chips([["bible","Bible study"],["book","Book study"],["other","Other"]],v=>f.kind===v,"data-kind")}</div></div>
+   ${f.step==="source"?`<div><label class="label" for="pfText">What are you studying?</label><textarea class="st-ta" id="pfText" placeholder="${f.kind==="bible"?"A book or passage, e.g. Romans or John 1–12":"Type the chapters, or leave this empty and take a photo of the contents page"}"></textarea></div>
+   ${photoOK?`<div class="row"><input type="file" id="pfCam" accept="image/*" capture="environment" class="sr-only"><input type="file" id="pfPick" accept="image/*" multiple class="sr-only"><button type="button" class="btn ghost" id="pfCamBtn">Take a photo</button><button type="button" class="btn ghost" id="pfPickBtn">Choose photos</button></div>
+   ${f.photos.length?`<div class="row">${f.photos.map((p,i)=>`<span style="position:relative"><img src="${p.url}" alt="Page ${i+1}" style="width:64px;height:84px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button type="button" class="icon" data-rm="${i}" aria-label="Remove photo ${i+1}" style="position:absolute;top:-8px;right:-8px;background:var(--surface);border-radius:50%;width:24px;height:24px">×</button></span>`).join("")}</div>`:""}`:`<p class="status" style="margin:0">Photo reading isn’t available right now. Type the list instead.</p>`}
+   <button type="button" class="btn" id="pfBuild">Build my list</button>`:""}
+   <p class="status" id="pfStatus" aria-live="polite" style="margin:0"></p>
+  </div>`;
+  let plan="";
+  if(f.step==="plan"){
+    const per=f.kind==="bible"?"passages":"sections";
+    plan=`
+  <div class="card"><div class="card-h"><h3>Your list</h3><span class="step">${parseItems(f.itemsText).length} items</span></div>
+   <textarea class="st-ta" id="pfItems" style="min-height:180px" aria-label="Study items, one per line"></textarea>
+   <p class="status" style="margin:0">One item per line. Add a page range after " | " if you like. Check this against your book or Bible before you start.</p></div>
+  <div class="card"><div class="card-h"><h3>When</h3></div>
+   <div><p class="label">How often</p><div class="row">${chips([["daily","Daily"],["weekdays","Weekdays"],["weekly","Weekly"],["monthly","Monthly"]],v=>f.cadence===v,"data-cad")}</div></div>
+   ${f.cadence==="weekly"?`<div><p class="label">Which days</p><div class="row">${chips([1,2,3,4,5,6,0].map(d=>[d,DOWN[d]]),v=>f.days.includes(Number(v)),"data-day")}</div></div>
+   <div><label class="label" for="pfEvery">Repeat</label><select class="dt" id="pfEvery"><option value="1">Every week</option><option value="2">Every other week</option></select></div>`:""}
+   ${f.cadence==="monthly"?`<div><label class="label" for="pfDom">Day of the month (1 to 28)</label><input type="number" inputmode="numeric" min="1" max="28" class="dt" id="pfDom"></div>`:""}
+   <div class="row" style="align-items:flex-end"><div style="flex:1"><label class="label" for="pfTime">Time</label><input type="time" class="dt" id="pfTime"></div>
+   <div style="flex:1"><label class="label" for="pfMins">Length</label><select class="dt" id="pfMins">${[15,30,45,60,90].map(m=>`<option value="${m}">${m} min</option>`).join("")}</select></div></div>
+   <div class="row" style="align-items:flex-end"><div style="flex:1"><label class="label" for="pfPer">${per} each time</label><input type="number" inputmode="numeric" min="1" max="50" class="dt" id="pfPer"></div>
+   <div style="flex:1"><label class="label" for="pfStart">Start</label><input type="date" class="dt" id="pfStart"></div></div>
+   <div><label class="label" for="pfRepeat">When I reach the end</label><select class="dt" id="pfRepeat"><option value="once">Stop</option><option value="loop">Start over</option></select></div>
+   <p class="status" id="pfPrev" style="margin:0"></p></div>
+  <div class="card"><div class="card-h"><h3>Questions</h3></div>
+   <div><label class="label" for="pfQ">Ask yourself each time (one per line, up to 5)</label><textarea class="st-ta" id="pfQ"></textarea></div>
+   <label class="fu-priv"><input type="checkbox" id="pfCal"> Add a repeating reminder to my Google Calendar</label>
+   <button type="button" class="btn" id="pfSave">${f.id?"Save changes":"Start this study"}</button></div>`;
+  }
+  root.innerHTML=src+plan;
+  const set=(id,k,num)=>{const el=$(id);if(!el)return;el.value=f[k];el.oninput=el.onchange=()=>{f[k]=num?Number(el.value):el.value;if(k==="itemsText"){const c=root.querySelector(".card-h .step");if(c)c.textContent=parseItems(f.itemsText).length+" items"}previewLine()}};
+  set("#pfTitle","title");set("#pfText","text");set("#pfItems","itemsText");set("#pfTime","time");set("#pfMins","mins",1);set("#pfPer","per",1);set("#pfStart","start");set("#pfRepeat","repeat");set("#pfQ","qText");set("#pfEvery","every",1);set("#pfDom","dom",1);
+  $("#pfBack").onclick=()=>{STUDY.view=f.id?"plan":"home";STUDY.pid=f.id||null;f.photos.forEach(p=>URL.revokeObjectURL(p.url));renderStudy();window.scrollTo(0,0)};
+  root.querySelectorAll("[data-kind]").forEach(b=>b.onclick=()=>{const old=f.kind;f.kind=b.dataset.kind;if(f.qText===KIND_Q[old].join("\n"))f.qText=KIND_Q[f.kind].join("\n");renderForm()});
+  root.querySelectorAll("[data-cad]").forEach(b=>b.onclick=()=>{f.cadence=b.dataset.cad;renderForm()});
+  root.querySelectorAll("[data-day]").forEach(b=>b.onclick=()=>{const d=Number(b.dataset.day);f.days=f.days.includes(d)?f.days.filter(x=>x!==d):[...f.days,d];renderForm()});
+  root.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{const p=f.photos.splice(Number(b.dataset.rm),1)[0];if(p)URL.revokeObjectURL(p.url);renderForm()});
+  const cam=$("#pfCam"),pick=$("#pfPick");
+  if(cam){$("#pfCamBtn").onclick=()=>cam.click();$("#pfPickBtn").onclick=()=>pick.click();cam.onchange=()=>addStudyPhotos([...cam.files]);pick.onchange=()=>addStudyPhotos([...pick.files])}
+  const bb=$("#pfBuild");if(bb)bb.onclick=buildItems;
+  const cb=$("#pfCal");if(cb){cb.checked=f.cal;cb.onchange=()=>{f.cal=cb.checked}}
+  const sv=$("#pfSave");if(sv)sv.onclick=saveForm;
+  previewLine();
+}
+async function saveForm(){
+  const f=STUDY.form,st=$("#pfStatus")||$("#stStatus"),p=formPlan(f);
+  if(!p.title){toast("Give the study a name");$("#pfTitle").focus();return}
+  if(!p.items.length){toast("Add at least one item");return}
+  if(!store){toast("Not ready yet. Try again in a moment.");return}
+  const btn=$("#pfSave");btn.disabled=true;
+  try{
+    let id=f.id,calId=f.calEventId||"";
+    const old=id?planById(id):null;
+    const needCal=f.cal||(old&&old.calEventId&&JSON.stringify([old.cadence,old.days,old.every,old.dom,old.time,old.mins,old.start,old.repeat,old.items.length,old.per])!==JSON.stringify([p.cadence,p.days,p.every,p.dom,p.time,p.mins,p.start,p.repeat,p.items.length,p.per]));
+    if(needCal&&mcp){
+      if(calId){try{await mcp.callTool("Google Calendar","delete_event",{eventId:calId,notificationLevel:"NONE"},{cache:false})}catch(e){}calId=""}
+      try{calId=await planCalendar(p)}catch(e){toast("Saved, but the calendar reminder didn’t go through")}
+    }else if(f.cal&&!mcp)toast("Saved. Calendar isn’t connected, so no reminder was added.");
+    const body={...p,calEventId:calId};
+    if(id){await store.update(id,body);Object.assign(old,body)}
+    else{const doc={study:"plan",private:true,createdAt:Date.now(),...body};id=await store.add(doc);if(!planById(id))STUDY.plans.push({...doc,id})}
+    f.photos.forEach(x=>URL.revokeObjectURL(x.url));
+    STUDY.pid=id;STUDY.view="plan";STUDY.k=null;renderStudy();window.scrollTo(0,0);toast("Saved");
+  }catch(e){btn.disabled=false;st.textContent="Couldn’t save just now. Try again."}
+}
+async function deletePlan(p){
+  try{
+    if(p.calEventId&&mcp){try{await mcp.callTool("Google Calendar","delete_event",{eventId:p.calEventId,notificationLevel:"NONE"},{cache:false})}catch(e){}}
+    for(const e of STUDY.entries.filter(x=>x.study==="pe"&&x.planId===p.id)){try{await store.remove(e.id)}catch(x){}}
+    await store.remove(p.id);
+    STUDY.plans=STUDY.plans.filter(x=>x.id!==p.id);STUDY.entries=STUDY.entries.filter(x=>!(x.study==="pe"&&x.planId===p.id));
+    STUDY.view="home";STUDY.pid=null;renderStudy();toast("Study deleted");
+  }catch(e){toast("Couldn’t delete just now")}
+}
+function renderPlan(){
+  const p=planById(STUDY.pid),root=$("#stBody");
+  if(!p){STUDY.view="home";renderStudy();return}
+  const tot=planTotal(p),cur=planCur(p);
+  if(STUDY.k==null)STUDY.k=cur;
+  const k=Math.max(0,Math.min(tot===Infinity?9999:tot-1,STUDY.k)),d=sessDate(p,k),items=sessItems(p,k);
+  const key=p.id+"|"+k,ent=studyEntry(key)||{},base={study:"pe",private:true,planId:p.id,k};
+  const today=new Date();today.setHours(0,0,0,0);
+  const rel=d.getTime()===today.getTime()?"Today":d<today?"An earlier session":"Coming up";
+  const qs=(p.questions&&p.questions.length?p.questions:KIND_Q[p.kind]||KIND_Q.other);
+  let behind=0;for(let i=0;i<Math.min(cur,800);i++){if(!(studyEntry(p.id+"|"+i)||{}).done)behind++}
+  $("#stEyebrow").textContent=KIND_NAME[p.kind]+" · "+cadenceText(p)+" · "+fmtTime(p.time);
+  $("#stTitle").textContent=p.title;
+  $("#stSub").textContent=`Session ${k+1}${tot===Infinity?"":" of "+tot} · ${fmtDay(d)} · ${rel}`;
+  const link=it=>p.kind==="bible"?`<a href="https://www.biblegateway.com/passage/?search=${encodeURIComponent(it.label)}&version=NASB1995" target="_blank" rel="noopener">${fbEsc(it.label)}</a>`:fbEsc(it.label);
+  const upcoming=[];for(let i=k+1;i<Math.min(tot,k+5);i++)upcoming.push(`<li>${fbEsc(fmtDay(sessDate(p,i)))} · ${sessItems(p,i).map(x=>fbEsc(x.label)).join(", ")}</li>`);
+  root.innerHTML=`
+  <div class="card"><button class="btn ghost" type="button" id="plHome" style="align-self:flex-start">← All studies</button>
+   <div class="row" style="justify-content:space-between;flex-wrap:nowrap"><button class="btn ghost" type="button" id="plPrev"${k<=0?" disabled":""}>← Prev</button><button class="btn ghost" type="button" id="plToday">Current</button><button class="btn ghost" type="button" id="plNext"${k>=tot-1?" disabled":""}>Next →</button></div></div>
+  <div class="card"><div class="card-h"><h3>${p.kind==="bible"?"Read (NASB 1995)":"Read"}</h3></div>
+   ${items.map(it=>`<div><p style="margin:0;font-family:var(--display);font-size:1.3rem;font-weight:600">${link(it)}</p>${it.detail?`<p class="sub" style="margin:2px 0 0">${fbEsc(it.detail)}</p>`:""}</div>`).join("")}
+   <label class="fu-priv"><input type="checkbox" id="plDone"> I finished this session</label>
+   ${behind&&k>=cur?`<p class="status" style="margin:0">${behind} earlier session${behind>1?"s":""} not marked done. Use Prev to catch up.</p>`:""}</div>
+  <div class="card"><div class="card-h"><h3>Questions</h3></div>
+   ${qs.map((q,i)=>`<div><label class="label" for="plQ${i}">${i+1}. ${fbEsc(q)}</label><textarea class="st-ta" id="plQ${i}" data-f="q${i}"></textarea></div>`).join("")}</div>
+  ${upcoming.length?`<div class="card"><div class="card-h"><h3>Coming up</h3></div><ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px">${upcoming.join("")}</ul></div>`:""}
+  <div class="card"><div class="row"><button class="btn ghost" type="button" id="plEdit">Edit study</button>
+   ${p.calEventId?`<span class="status">Reminder is on your calendar.</span>`:`<button class="btn ghost" type="button" id="plCal">Add calendar reminder</button>`}
+   <button class="btn ghost" type="button" id="plDel">Delete</button></div>
+   <p class="status" style="margin:0">Private to you. Never filed to Drive.</p></div>`;
+  root.querySelectorAll("[data-f]").forEach(el=>{el.value=ent[el.dataset.f]||"";el.oninput=()=>studyPatch(key,base,{[el.dataset.f]:el.value})});
+  const dn=$("#plDone");dn.checked=!!ent.done;dn.onchange=()=>studyPatch(key,base,{done:dn.checked});
+  const go=n=>{STUDY.k=Math.max(0,n);renderPlan();window.scrollTo(0,0)};
+  $("#plHome").onclick=()=>{STUDY.view="home";renderStudy();window.scrollTo(0,0)};
+  $("#plPrev").onclick=()=>go(k-1);$("#plNext").onclick=()=>go(k+1);$("#plToday").onclick=()=>go(cur);
+  $("#plEdit").onclick=()=>{STUDY.form=newForm(p);STUDY.view="form";renderStudy();window.scrollTo(0,0)};
+  const cb=$("#plCal");if(cb)cb.onclick=async()=>{cb.disabled=true;try{const id=await planCalendar(p);await store.update(p.id,{calEventId:id});p.calEventId=id;toast("Reminder added");renderPlan()}catch(e){cb.disabled=false;toast(mcp?"The reminder didn’t go through":"Calendar isn’t connected")}};
+  const del=$("#plDel");del.onclick=()=>{if(del.dataset.arm){deletePlan(p)}else{del.dataset.arm="1";del.textContent="Tap again to delete";setTimeout(()=>{if(del.isConnected){del.dataset.arm="";del.textContent="Delete"}},3500)}};
+}
+function renderHome(){
+  const root=$("#stBody");
+  $("#stEyebrow").textContent="Private to you";$("#stTitle").textContent="Study";
+  $("#stSub").textContent="Pick up where you left off, or start something new.";
+  const ti=fbIdx(fbKey(new Date()));
+  const fbLine=ti<0?"Starts Thursday, Nov 12":ti>=FB_DAYS?"Complete":`Day ${ti+1} of ${FB_DAYS} · Week ${Math.floor(ti/7)+1}: ${FB_WEEKS[Math.floor(ti/7)].t}`;
+  const cards=STUDY.plans.slice().sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)).map(p=>{
+    const tot=planTotal(p),cur=planCur(p),d=sessDate(p,cur),t=new Date();t.setHours(0,0,0,0);
+    const done=STUDY.entries.filter(e=>e.study==="pe"&&e.planId===p.id&&e.done).length;
+    return `<button type="button" class="card st-card" data-open="${fbEsc(p.id)}"><div class="card-h"><h3>${fbEsc(p.title)}</h3><span class="step">${done}${tot===Infinity?"":" of "+tot} done</span></div><p class="sub" style="margin:0">${fbEsc(cadenceText(p))} · ${fbEsc(fmtTime(p.time))}</p><p style="margin:0">${d.getTime()===t.getTime()?"Today":fbEsc(fmtDay(d))}: ${sessItems(p,cur).map(x=>fbEsc(x.label)).join(", ")}</p></button>`}).join("");
+  root.innerHTML=`
+  <button type="button" class="card st-card" data-open="fb"><div class="card-h"><h3>Friedman &amp; Bowen</h3><span class="step">81 days</span></div><p class="sub" style="margin:0">${fbEsc(fbLine)}</p></button>
+  ${cards}
+  <button type="button" class="card st-card" id="stNew" style="border-style:dashed"><div class="card-h"><h3>+ New study</h3></div><p class="sub" style="margin:0">A Bible book or a book you are reading. Take a photo of the contents and set your schedule.</p></button>`;
+  root.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>{const id=b.dataset.open;if(id==="fb"){STUDY.view="fb";STUDY.sel=null}else{STUDY.view="plan";STUDY.pid=id;STUDY.k=null}renderStudy();window.scrollTo(0,0)});
+  $("#stNew").onclick=()=>{STUDY.form=newForm();STUDY.view="form";renderStudy();window.scrollTo(0,0)};
+}
+function renderStudy(){
+  const v=STUDY.view;
+  if(v==="fb")renderFB();else if(v==="plan")renderPlan();else if(v==="form"&&STUDY.form)renderForm();else{STUDY.view="home";renderHome()}
+}
+function renderStudyLight(){
+  const v=$("#v-study");if(!v||v.hidden)return;
+  if(Object.keys(STUDY.pend).length||STUDY.view==="form")return;
+  const a=document.activeElement;if(a&&$("#stBody").contains(a))return;
+  renderStudy();
+}
+
 /* ---------- storage ---------- */
-function setNotes(arr){state.notes=arr.sort((a,b)=>b.createdAt-a.createdAt);renderAll();if(WK.cal)matchWeek()}
+function setNotes(arr){STUDY.entries=arr.filter(n=>n.study==="fb"||n.study==="pe");STUDY.plans=arr.filter(n=>n.study==="plan");STUDY.set=arr.find(n=>n.study==="fb-set")||null;arr=arr.filter(n=>!n.study);state.notes=arr.sort((a,b)=>b.createdAt-a.createdAt);renderAll();if(WK.cal)matchWeek()}
 function localStore(){
   let mem=[];try{mem=JSON.parse(localStorage.getItem(LS)||"[]")}catch(e){}
   const persist=()=>{try{localStorage.setItem(LS,JSON.stringify(mem))}catch(e){}setNotes([...mem])};
@@ -2970,7 +3364,7 @@ function localStore(){
 }
 async function init(){
   renderPickers();renderAll();renderPages();renderMeetType();restoreDraft();
-  const h=location.hash.slice(1);if(["notes","ask","follow","review","used"].includes(h))show(h);
+  const h=location.hash.slice(1);if(["notes","ask","follow","review","used","study"].includes(h))show(h);
   store=localStore();
   if(window.claude&&window.claude.use){assetsReady=window.claude.use("assets").then(a=>{assetsNs=a;return a}).catch(()=>null);window.claude.use("sample").then(s=>{sampleFn=s;setSaveLabel();trySermonSync();if(s&&WK.cal)matchWeek();if(s&&s.limits)s.limits().then(c=>{photoCaps=c&&c.images;$("#photoRow").hidden=!photoCaps}).catch(()=>{});if(!s)$("#askProgress").textContent="The assistant works when the app is opened in Claude."}).catch(()=>{});window.claude.use("mcp").then(m=>{mcp=m;if(m){setTimeout(loadWeek,600);setTimeout(()=>syncCal(true),1500)}trySermonSync();renderFollow();if(!m)$("#driveStatus").textContent="Drive filing works when the app is opened in Claude. Notes still save here."}).catch(()=>{})}
   $("#storeStatus").textContent="Saving on this device only while connecting…";

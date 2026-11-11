@@ -143,6 +143,8 @@ function route_(server, tool, i) {
       if (i.visibility) ev.visibility = i.visibility;
       if (i.colorId) ev.colorId = i.colorId;
       if (i.overrideReminders) ev.reminders = { useDefault: false, overrides: i.overrideReminders };
+      if (i.recurrenceData && i.recurrenceData.length) ev.recurrence = i.recurrenceData; // repeating Study reminders
+      if (i.availability === 'AVAILABILITY_FREE') ev.transparency = 'transparent';
       return Calendar.Events.insert(ev, i.calendarId || 'primary', { sendUpdates: 'none' });
     }
     case 'Google Calendar/update_event': {
