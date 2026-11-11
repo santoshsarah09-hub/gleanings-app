@@ -2855,7 +2855,7 @@ function renderFollow(){
   const tab=document.querySelector('.tab[data-view="follow"]');const lateN=open.filter(n=>n.followAt<Date.now()).length;
   tab.lastChild.textContent=lateN?`Follow-ups (${lateN})`:"Follow-ups";
 }
-function renderAll(){renderNotes();renderReview();renderFollow();try{renderWeek()}catch(e){}try{renderUsed()}catch(e){}try{renderStudyLight()}catch(e){}try{studyAuto()}catch(e){}}
+function renderAll(){renderNotes();renderReview();renderFollow();try{renderWeek()}catch(e){}try{renderUsed()}catch(e){}try{renderStudyLight()}catch(e){}}
 document.addEventListener("input",e=>{if(e.target&&e.target.id==="usedQ")renderUsed()});
 
 $("#q").addEventListener("input",e=>{state.q=e.target.value;renderNotes()});
@@ -3297,7 +3297,7 @@ function renderPlan(){
   let behind=0;for(let i=0;i<Math.min(cur,800);i++){if(!(studyEntry(p.id+"|"+i)||{}).done)behind++}
   $("#stEyebrow").textContent=KIND_NAME[p.kind]+" · "+cadenceText(p)+" · "+fmtTime(p.time);
   $("#stTitle").textContent=p.title;
-  $("#stSub").textContent=`${p.cadence==="monthly"?"Month":"Week"} ${wkNum(p,d)} \u00b7 Session ${k+1}${tot===Infinity?"":" of "+tot} · ${fmtDay(d)} · ${rel}`;
+  $("#stSub").textContent=`Session ${k+1}${tot===Infinity?"":" of "+tot} · ${fmtDay(d)} · ${rel}`;
   const link=it=>p.kind==="bible"?`<a href="https://www.biblegateway.com/passage/?search=${encodeURIComponent(it.label)}&version=NASB1995" target="_blank" rel="noopener">${fbEsc(it.label)}</a>`:fbEsc(it.label);
   const upcoming=[];for(let i=k+1;i<Math.min(tot,k+5);i++)upcoming.push(`<li>${fbEsc(fmtDay(sessDate(p,i)))} · ${sessItems(p,i).map(x=>fbEsc(x.label)).join(", ")}</li>`);
   root.innerHTML=`
@@ -3354,65 +3354,44 @@ function renderStudyLight(){
   renderStudy();
 }
 
-/* ---------- file to Drive (weekly, automatic after Sunday 9 pm) ---------- */
+/* ---------- file to Drive (weekly) ---------- */
 const STUDY_DOC="1sIyNIzzkHdzMLeH28-Cv0L0nTvA4iZSJvXUoSISyOTI",STUDY_DOC_URL="https://docs.google.com/document/d/"+STUDY_DOC+"/edit";
 const fmtDayY=d=>d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric",year:"numeric"});
-const wkNum=(p,d)=>p.cadence==="monthly"?Math.round((d-sessDate(p,0))/2629800000)+1:Math.floor(Math.round((d-parseD(p.start))/864e5)/7)+1;
 function entryInfo(e){
   if(e.study==="fb"){
     const i=fbIdx(e.date),wi=Math.floor(i/7),wk=FB_WEEKS[wi];if(!wk)return null;
     const [ref,q]=wk.d[i%7].split("|"),d=fbDate(i);
-    return {d,key:"fb|"+wi,label:"WEEK "+(wi+1)+" · Friedman & Bowen · "+wk.t,head:fmtDayY(d)+" · Day "+(i+1),
+    return {d,head:"Friedman & Bowen \u00b7 "+fmtDayY(d)+" \u00b7 Week "+(wi+1)+": "+wk.t,
       lines:[["Scripture",ref],["Question",q],["At work",e.work],["Reactive",e.reactive],["Steady",e.steady],["Tomorrow",e.tomorrow],...FB_REVIEW.map((r,k)=>["Sunday review: "+r,e["rv"+(k+1)]]),["Read",e.readDone?"yes":""]]};
   }
   const p=planById(e.planId);if(!p)return null;
-  const d=sessDate(p,e.k),n=wkNum(p,d),qs=p.questions&&p.questions.length?p.questions:(KIND_Q[p.kind]||KIND_Q.other);
-  return {d,key:p.id+"|"+n,label:(p.cadence==="monthly"?"MONTH ":"WEEK ")+n+" · "+p.title,head:fmtDayY(d)+" · Session "+(e.k+1),
+  const d=sessDate(p,e.k),qs=p.questions&&p.questions.length?p.questions:(KIND_Q[p.kind]||KIND_Q.other);
+  return {d,head:p.title+" \u00b7 "+fmtDayY(d)+" \u00b7 Session "+(e.k+1),
     lines:[["Read",sessItems(p,e.k).map(x=>x.label).join(", ")],...qs.map((q,i)=>[q,e["q"+i]]),["Finished",e.done?"yes":""]]};
 }
-function filePending(cut){
-  const t=cut||(()=>{const x=new Date();x.setHours(23,59,59,0);return x})();
+function filePending(){
+  const t=new Date();t.setHours(23,59,59,0);
   return STUDY.entries.map(e=>({e,i:entryInfo(e)})).filter(x=>x.i&&studyHas(x.e)&&!x.e.filed&&x.i.d<=t).sort((a,b)=>a.i.d-b.i.d);
 }
 function fileBar(){
   const n=filePending().length;
-  return `<div class="card"><div class="card-h"><h3>Study Journal in Drive</h3><span class="step">${n} not filed yet</span></div>
-   <p class="status" style="margin:0">Files itself each week: the next time you open Gleanings after Sunday 9 pm, your entries are added to one Google Doc, grouped by week. Entries edited after filing stay only in the app.</p>
-   <button type="button" class="btn ghost" id="stFile"${n?"":" disabled"}>File now</button>
-   <p class="status" style="margin:0"><a href="${STUDY_DOC_URL}" target="_blank" rel="noopener">Open the Study Journal</a></p></div>`;
+  return `<div class="card"><div class="card-h"><h3>Study Journal in Drive</h3><span class="step">${n} waiting</span></div>
+   <button type="button" class="btn" id="stFile"${n?"":" disabled"}>File this week to Drive</button>
+   <p class="status" style="margin:0">Adds your entries to one running Google Doc. Entries edited after filing stay only in the app. <a href="${STUDY_DOC_URL}" target="_blank" rel="noopener">Open the Study Journal</a>.</p></div>`;
 }
-function wireFile(){const b=$("#stFile");if(b)b.onclick=()=>studyFile(false)}
-function filingCutoff(){
-  const n=new Date(),s=new Date(n.getFullYear(),n.getMonth(),n.getDate(),23,59,59);
-  let back=n.getDay();if(back===0&&n.getHours()<21)back=7;
-  s.setDate(s.getDate()-back);return s;
-}
-async function studyFile(auto,cut){
-  if(STUDY.filing)return;
-  const todo=filePending(cut);
-  if(!todo.length){if(!auto)toast("Nothing new to file");return}
-  if(!mcp){if(!auto)toast("Drive isn’t connected here");return}
-  STUDY.filing=true;const btn=$("#stFile");if(btn)btn.disabled=true;
-  const groups=[];
-  for(const x of todo){
-    let g=groups.find(h=>h.key===x.i.key);
-    if(!g){g={key:x.i.key,label:x.i.label,cont:STUDY.entries.some(e=>e.filed&&(entryInfo(e)||{}).key===x.i.key),items:[]};groups.push(g)}
-    g.items.push(x);
-  }
-  const text="\n"+groups.map(g=>g.label+(g.cont?" (continued)":"")+"\n"+g.items.map(({i})=>"\n"+i.head+"\n"+i.lines.filter(l=>String(l[1]||"").trim()).map(l=>l[0]+": "+String(l[1]).trim()).join("\n")).join("\n")+"\n").join("\n");
+function wireFile(){const b=$("#stFile");if(b)b.onclick=studyFile}
+async function studyFile(){
+  const todo=filePending();
+  if(!todo.length){toast("Nothing new to file");return}
+  if(!mcp){toast("Drive isn\u2019t connected here");return}
+  const btn=$("#stFile");if(btn)btn.disabled=true;
+  const text="\n"+todo.map(({i})=>i.head+"\n"+i.lines.filter(l=>String(l[1]||"").trim()).map(l=>l[0]+": "+String(l[1]).trim()).join("\n")+"\n").join("\n");
   try{
     await mcp.callTool("Google Docs","update_doc",{documentId:STUDY_DOC,requests:[{insertText:{text,endOfSegmentLocation:{}}}]},{cache:false});
     for(const {e} of todo){try{await store.update(e.id,{filed:true});e.filed=true}catch(x){}}
-    toast((auto?"Filed last week’s study to Drive":"Filed to Drive")+" ("+todo.length+(todo.length>1?" entries)":" entry)"));
-  }catch(err){if(!auto)toast("Couldn’t file to Drive just now")}
-  STUDY.filing=false;
-  try{renderStudyLight()}catch(e){}
-}
-let studyAutoT=0;
-function studyAuto(){
-  if(STUDY.filing||!mcp||!store||Date.now()-studyAutoT<600000||Object.keys(STUDY.pend).length)return;
-  const cut=filingCutoff();if(!filePending(cut).length)return;
-  studyAutoT=Date.now();studyFile(true,cut);
+    toast("Filed "+todo.length+(todo.length>1?" entries":" entry")+" to Drive");
+  }catch(err){toast("Couldn\u2019t file to Drive just now")}
+  renderStudy();
 }
 
 /* ---------- storage ---------- */
