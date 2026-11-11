@@ -3071,10 +3071,10 @@ function renderFB(){
     <div><label class="label" for="stSt">2. Steady: where did I stay connected and calm, and clear about where I stand?</label><textarea class="st-ta" id="stSt" data-f="steady"></textarea></div>
     <div><label class="label" for="stTo">3. Tomorrow: what is my one small practice?</label><textarea class="st-ta" id="stTo" data-f="tomorrow"></textarea></div>
   </div>
-  ${review}${phase2}
+  ${review}${dow===0?fileBar():""}${phase2}
   <div class="card"><div class="card-h"><h3>Your journal</h3><span class="step">${done} of ${elapsed} days</span></div>
     ${hist.length?hist.map(h=>`<button type="button" class="chip" data-d="${fbEsc(h.date)}" style="text-align:left;border-radius:12px;white-space:normal">${fbEsc(fbDate(fbIdx(h.date)).toLocaleDateString(undefined,{month:"short",day:"numeric"}))} · ${fbEsc(String(h.reactive||h.steady||h.tomorrow||h.work||"Read").slice(0,70))}</button>`).join(""):'<p class="sub" style="margin:0">Your entries will appear here.</p>'}
-    <p class="status" style="margin:0">Private to you. Never filed to Drive and never seen by your sermon or book tools. <a href="${FB_GUIDE}" target="_blank" rel="noopener">Open the full guide</a>.</p>
+    <p class="status" style="margin:0">Private to you until you file it to Drive. <a href="${FB_GUIDE}" target="_blank" rel="noopener">Open the full guide</a>.</p>
   </div>`;
   root.querySelectorAll("[data-f]").forEach(el=>{el.value=ent[el.dataset.f]||"";el.oninput=()=>studyPatch(key,{study:"fb",date:key,private:true},{[el.dataset.f]:el.value})});
   const rc=root.querySelector("[data-c]");if(rc){rc.checked=!!ent.readDone;rc.onchange=()=>studyPatch(key,{study:"fb",date:key,private:true},{readDone:rc.checked})}
@@ -3082,6 +3082,7 @@ function renderFB(){
   $("#stHome").onclick=()=>{STUDY.view="home";renderStudy();window.scrollTo(0,0)};$("#stPrev").onclick=()=>go(i-1);$("#stNext").onclick=()=>go(i+1);$("#stToday").onclick=()=>go(todayI);
   root.querySelectorAll("[data-d]").forEach(b=>b.onclick=()=>{STUDY.sel=b.dataset.d;renderFB();window.scrollTo(0,0)});
   const g=$("#stG2g");if(g)g.onchange=()=>{const n=parseInt(g.value,10);if(n>0)studySetG2g(n)};
+  wireFile();
 }
 
 /* ---------- custom studies (your own plans) ---------- */
@@ -3312,7 +3313,7 @@ function renderPlan(){
   <div class="card"><div class="row"><button class="btn ghost" type="button" id="plEdit">Edit study</button>
    ${p.calEventId?`<span class="status">Reminder is on your calendar.</span>`:`<button class="btn ghost" type="button" id="plCal">Add calendar reminder</button>`}
    <button class="btn ghost" type="button" id="plDel">Delete</button></div>
-   <p class="status" style="margin:0">Private to you. Never filed to Drive.</p></div>`;
+   <p class="status" style="margin:0">Private to you until you file it to Drive.</p></div>${fileBar()}`;
   root.querySelectorAll("[data-f]").forEach(el=>{el.value=ent[el.dataset.f]||"";el.oninput=()=>studyPatch(key,base,{[el.dataset.f]:el.value})});
   const dn=$("#plDone");dn.checked=!!ent.done;dn.onchange=()=>studyPatch(key,base,{done:dn.checked});
   const go=n=>{STUDY.k=Math.max(0,n);renderPlan();window.scrollTo(0,0)};
@@ -3321,6 +3322,7 @@ function renderPlan(){
   $("#plEdit").onclick=()=>{STUDY.form=newForm(p);STUDY.view="form";renderStudy();window.scrollTo(0,0)};
   const cb=$("#plCal");if(cb)cb.onclick=async()=>{cb.disabled=true;try{const id=await planCalendar(p);await store.update(p.id,{calEventId:id});p.calEventId=id;toast("Reminder added");renderPlan()}catch(e){cb.disabled=false;toast(mcp?"The reminder didn’t go through":"Calendar isn’t connected")}};
   const del=$("#plDel");del.onclick=()=>{if(del.dataset.arm){deletePlan(p)}else{del.dataset.arm="1";del.textContent="Tap again to delete";setTimeout(()=>{if(del.isConnected){del.dataset.arm="";del.textContent="Delete"}},3500)}};
+  wireFile();
 }
 function renderHome(){
   const root=$("#stBody");
@@ -3335,9 +3337,11 @@ function renderHome(){
   root.innerHTML=`
   <button type="button" class="card st-card" data-open="fb"><div class="card-h"><h3>Friedman &amp; Bowen</h3><span class="step">81 days</span></div><p class="sub" style="margin:0">${fbEsc(fbLine)}</p></button>
   ${cards}
+  ${fileBar()}
   <button type="button" class="card st-card" id="stNew" style="border-style:dashed"><div class="card-h"><h3>+ New study</h3></div><p class="sub" style="margin:0">A Bible book or a book you are reading. Take a photo of the contents and set your schedule.</p></button>`;
   root.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>{const id=b.dataset.open;if(id==="fb"){STUDY.view="fb";STUDY.sel=null}else{STUDY.view="plan";STUDY.pid=id;STUDY.k=null}renderStudy();window.scrollTo(0,0)});
   $("#stNew").onclick=()=>{STUDY.form=newForm();STUDY.view="form";renderStudy();window.scrollTo(0,0)};
+  wireFile();
 }
 function renderStudy(){
   const v=STUDY.view;
@@ -3347,6 +3351,46 @@ function renderStudyLight(){
   const v=$("#v-study");if(!v||v.hidden)return;
   if(Object.keys(STUDY.pend).length||STUDY.view==="form")return;
   const a=document.activeElement;if(a&&$("#stBody").contains(a))return;
+  renderStudy();
+}
+
+/* ---------- file to Drive (weekly) ---------- */
+const STUDY_DOC="1sIyNIzzkHdzMLeH28-Cv0L0nTvA4iZSJvXUoSISyOTI",STUDY_DOC_URL="https://docs.google.com/document/d/"+STUDY_DOC+"/edit";
+const fmtDayY=d=>d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric",year:"numeric"});
+function entryInfo(e){
+  if(e.study==="fb"){
+    const i=fbIdx(e.date),wi=Math.floor(i/7),wk=FB_WEEKS[wi];if(!wk)return null;
+    const [ref,q]=wk.d[i%7].split("|"),d=fbDate(i);
+    return {d,head:"Friedman & Bowen \u00b7 "+fmtDayY(d)+" \u00b7 Week "+(wi+1)+": "+wk.t,
+      lines:[["Scripture",ref],["Question",q],["At work",e.work],["Reactive",e.reactive],["Steady",e.steady],["Tomorrow",e.tomorrow],...FB_REVIEW.map((r,k)=>["Sunday review: "+r,e["rv"+(k+1)]]),["Read",e.readDone?"yes":""]]};
+  }
+  const p=planById(e.planId);if(!p)return null;
+  const d=sessDate(p,e.k),qs=p.questions&&p.questions.length?p.questions:(KIND_Q[p.kind]||KIND_Q.other);
+  return {d,head:p.title+" \u00b7 "+fmtDayY(d)+" \u00b7 Session "+(e.k+1),
+    lines:[["Read",sessItems(p,e.k).map(x=>x.label).join(", ")],...qs.map((q,i)=>[q,e["q"+i]]),["Finished",e.done?"yes":""]]};
+}
+function filePending(){
+  const t=new Date();t.setHours(23,59,59,0);
+  return STUDY.entries.map(e=>({e,i:entryInfo(e)})).filter(x=>x.i&&studyHas(x.e)&&!x.e.filed&&x.i.d<=t).sort((a,b)=>a.i.d-b.i.d);
+}
+function fileBar(){
+  const n=filePending().length;
+  return `<div class="card"><div class="card-h"><h3>Study Journal in Drive</h3><span class="step">${n} waiting</span></div>
+   <button type="button" class="btn" id="stFile"${n?"":" disabled"}>File this week to Drive</button>
+   <p class="status" style="margin:0">Adds your entries to one running Google Doc. Entries edited after filing stay only in the app. <a href="${STUDY_DOC_URL}" target="_blank" rel="noopener">Open the Study Journal</a>.</p></div>`;
+}
+function wireFile(){const b=$("#stFile");if(b)b.onclick=studyFile}
+async function studyFile(){
+  const todo=filePending();
+  if(!todo.length){toast("Nothing new to file");return}
+  if(!mcp){toast("Drive isn\u2019t connected here");return}
+  const btn=$("#stFile");if(btn)btn.disabled=true;
+  const text="\n"+todo.map(({i})=>i.head+"\n"+i.lines.filter(l=>String(l[1]||"").trim()).map(l=>l[0]+": "+String(l[1]).trim()).join("\n")+"\n").join("\n");
+  try{
+    await mcp.callTool("Google Docs","update_doc",{documentId:STUDY_DOC,requests:[{insertText:{text,endOfSegmentLocation:{}}}]},{cache:false});
+    for(const {e} of todo){try{await store.update(e.id,{filed:true});e.filed=true}catch(x){}}
+    toast("Filed "+todo.length+(todo.length>1?" entries":" entry")+" to Drive");
+  }catch(err){toast("Couldn\u2019t file to Drive just now")}
   renderStudy();
 }
 
