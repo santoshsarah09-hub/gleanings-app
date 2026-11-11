@@ -1581,7 +1581,7 @@ async function renderSettings(){
       const rows=Object.entries(st.usage||{});
       if(!rows.length)u.append(elx("p",null,"Nothing yet."));
       else{const t=document.createElement("table");rows.forEach(([m,v])=>{const tr=document.createElement("tr");tr.append(elx("td",null,m.replace("claude-","").replace("gemini-","Gemini ")),elx("td",null,`${v.calls} calls · ${Math.round((v.in+v.out)/1000)}k tokens`));t.append(tr)});u.append(t)}
-      const a=document.createElement("a");a.href=(st.provider==="gemini"?"https://aistudio.google.com/":"https://console.anthropic.com/settings/usage");a.target="_blank";a.rel="noopener";a.textContent=st.provider==="gemini"?"See usage on aistudio.google.com":"See the cost on console.anthropic.com";u.append(a);kids.push(u);
+      const a=document.createElement("a");const U=st.provider==="gemini"?"aistudio.google.com":"console.anthropic.com/settings/usage";a.href="https:"+String.fromCharCode(47,47)+U;a.target="_blank";a.rel="noopener";a.textContent=st.provider==="gemini"?"See usage on aistudio.google.com":"See the cost on console.anthropic.com";u.append(a);kids.push(u);
       const pv=elx("div","set-row");pv.append(elx("b",null,"Private notes"),elx("p",null,`Private notes and patient/family follow-ups are kept in your private script settings, not in Drive. Using ${Math.round(st.privateBytes/1024)} KB of about 450 KB.`));kids.push(pv)}
     const im=elx("div","set-row");im.append(elx("b",null,"Bring notes over from the Claude version"),elx("p",null,"In the Claude version open Settings → Export all notes, then pick that file here."));
     const fi=document.createElement("input");fi.type="file";fi.accept=".json,application/json";
