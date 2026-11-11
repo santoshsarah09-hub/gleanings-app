@@ -99,6 +99,9 @@ window.addEventListener("error",function(e){show("ERR "+e.message+" @"+(e.lineno
     status:async()=>JSON.parse(await GS("getStatus")),
     setKey:k=>GS("setKey",k),
     clearKey:()=>GS("clearKey"),
+    setGeminiKey:k=>GS("setGeminiKey",k),
+    clearGeminiKey:()=>GS("clearGeminiKey"),
+    setProvider:p=>GS("setProvider",p),
     importNotes:arr=>GS("dbImport",JSON.stringify(arr)).then(n=>{refresh();return n})
   };
 })();
@@ -1558,19 +1561,27 @@ async function renderSettings(){
   const box=$("#setBody");const kids=[elx("h3",null,"Settings")];
   if(window.GLEAN_STANDALONE&&window.GLEAN_SETTINGS){
     let st=null;try{st=await GLEAN_SETTINGS.status();window.GLEAN_URL=st.url}catch(e){}
-    const k=elx("div","set-row");k.append(elx("b",null,"AI key (Anthropic)"));
-    if(st&&st.hasKey){k.append(elx("p","set-ok","Connected. The app uses your own key, not your Claude plan."));const rm=elx("button","btn ghost","Replace key");rm.type="button";rm.onclick=async()=>{await GLEAN_SETTINGS.clearKey();renderSettings()};k.append(rm)}
-    else{k.append(elx("p",null,"Paste your key from console.anthropic.com → API keys. It is saved in your private Google script settings, never in Drive."));
-      const inp=document.createElement("input");inp.type="password";inp.placeholder="sk-ant-…";inp.id="keyIn";inp.autocomplete="off";
-      const sv=elx("button","btn","Save key");sv.type="button";const msg=elx("p",null,"");
-      sv.onclick=async()=>{sv.disabled=true;sv.textContent="Checking…";try{await GLEAN_SETTINGS.setKey(inp.value);toast("Key saved");renderSettings()}catch(e){msg.textContent=e.message||"That key didn't work.";sv.disabled=false;sv.textContent="Save key"}};
-      k.append(inp,sv,msg)}
+    const k=elx("div","set-row");k.append(elx("b",null,"AI provider"));
+    const prov=(st&&st.provider)||"anthropic";
+    const chipRow=elx("div",null,"");chipRow.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0";
+    [["anthropic","Claude"],["gemini","Gemini"]].forEach(([v,l])=>{const c=elx("button","chip",l);c.type="button";c.setAttribute("aria-pressed",prov===v?"true":"false");
+      c.onclick=async()=>{if(v===prov)return;try{await GLEAN_SETTINGS.setProvider(v);toast("Now using "+l);renderSettings()}catch(e){toast(e.message||"Add that key first")}};chipRow.append(c)});
+    k.append(chipRow);
+    const keyBlock=(label,has,hint,ph,save,clear)=>{const d=elx("div",null,"");d.style.cssText="margin-top:10px";d.append(elx("b",null,label));
+      if(has){d.append(elx("p","set-ok","Connected. The app uses your own key, not your subscription."));const rm=elx("button","btn ghost","Replace key");rm.type="button";rm.onclick=async()=>{await clear();renderSettings()};d.append(rm)}
+      else{d.append(elx("p",null,hint));const inp=document.createElement("input");inp.type="password";inp.placeholder=ph;inp.autocomplete="off";
+        const sv=elx("button","btn","Save key");sv.type="button";const msg=elx("p",null,"");
+        sv.onclick=async()=>{sv.disabled=true;sv.textContent="Checking…";try{await save(inp.value);toast("Key saved");renderSettings()}catch(e){msg.textContent=e.message||"That key didn't work.";sv.disabled=false;sv.textContent="Save key"}};
+        d.append(inp,sv,msg)}
+      return d};
+    k.append(keyBlock("Claude key (Anthropic)",!!(st&&(st.hasAnthropicKey!==undefined?st.hasAnthropicKey:st.hasKey)),"Paste your key from console.anthropic.com → API keys. It is saved in your private Google script settings, never in Drive.","sk-ant-…",v=>GLEAN_SETTINGS.setKey(v),()=>GLEAN_SETTINGS.clearKey()));
+    k.append(keyBlock("Gemini key (Google)",!!(st&&st.hasGeminiKey),"Create a key at aistudio.google.com → Get API key, then paste it here. Saving it switches the app to Gemini. Free keys may let Google use what you send to improve its products, so check Google's terms before using private material.","AIza…",v=>GLEAN_SETTINGS.setGeminiKey(v),()=>GLEAN_SETTINGS.clearGeminiKey()));
     kids.push(k);
     if(st){const u=elx("div","set-row");u.append(elx("b",null,"AI use this month"));
       const rows=Object.entries(st.usage||{});
       if(!rows.length)u.append(elx("p",null,"Nothing yet."));
-      else{const t=document.createElement("table");rows.forEach(([m,v])=>{const tr=document.createElement("tr");tr.append(elx("td",null,m.replace("claude-","")),elx("td",null,`${v.calls} calls · ${Math.round((v.in+v.out)/1000)}k tokens`));t.append(tr)});u.append(t)}
-      const a=document.createElement("a");a.href="https://console.anthropic.com/settings/usage";a.target="_blank";a.rel="noopener";a.textContent="See the cost on console.anthropic.com";u.append(a);kids.push(u);
+      else{const t=document.createElement("table");rows.forEach(([m,v])=>{const tr=document.createElement("tr");tr.append(elx("td",null,m.replace("claude-","").replace("gemini-","Gemini ")),elx("td",null,`${v.calls} calls · ${Math.round((v.in+v.out)/1000)}k tokens`));t.append(tr)});u.append(t)}
+      const a=document.createElement("a");a.href=(st.provider==="gemini"?"https://aistudio.google.com/":"https://console.anthropic.com/settings/usage");a.target="_blank";a.rel="noopener";a.textContent=st.provider==="gemini"?"See usage on aistudio.google.com":"See the cost on console.anthropic.com";u.append(a);kids.push(u);
       const pv=elx("div","set-row");pv.append(elx("b",null,"Private notes"),elx("p",null,`Private notes and patient/family follow-ups are kept in your private script settings, not in Drive. Using ${Math.round(st.privateBytes/1024)} KB of about 450 KB.`));kids.push(pv)}
     const im=elx("div","set-row");im.append(elx("b",null,"Bring notes over from the Claude version"),elx("p",null,"In the Claude version open Settings → Export all notes, then pick that file here."));
     const fi=document.createElement("input");fi.type="file";fi.accept=".json,application/json";
