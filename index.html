@@ -3009,7 +3009,7 @@ const ekey=e=>e.study==='pe'?e.planId+'|'+e.k:e.date;
 const studyEntry=k=>STUDY.entries.find(e=>ekey(e)===k);
 const fbEntries=()=>STUDY.entries.filter(e=>e.study==='fb');
 const FB_FIELDS=["work","reactive","steady","tomorrow","rv1","rv2","rv3","rv4","rv5"];
-const studyHas=e=>!!e&&([...FB_FIELDS,"q0","q1","q2","q3","q4"].some(f=>String(e[f]||"").trim())||e.readDone||e.done);
+const studyHas=e=>!!e&&([...FB_FIELDS,"q0","q1","q2","q3","q4","ga0","ga1","ga2","ga3"].some(f=>String(e[f]||"").trim())||e.readDone||e.done);
 async function studyFlush(key){
   const patch=STUDY.pend[key],base=STUDY.base[key];delete STUDY.pend[key];if(!patch||!store)return;
   const st=$("#stStatus");
@@ -3037,6 +3037,7 @@ async function studySetG2g(n){
     toast("Page count saved");renderFB();
   }catch(e){toast("Couldn’t save the page count")}
 }
+const rqCtxFB=rd=>({kind:"book",title:rd.book,label:rd.known?"pages "+rd.from+" to "+rd.to:"today\u2019s reading",detail:""});
 function renderFB(){
   const root=$("#stBody");if(!root)return;
   const todayI=fbIdx(fbKey(new Date()));
@@ -3072,6 +3073,7 @@ function renderFB(){
     <div><label class="label" for="stSt">2. Steady: where did I stay connected and calm, and clear about where I stand?</label><textarea class="st-ta" id="stSt" data-f="steady"></textarea></div>
     <div><label class="label" for="stTo">3. Tomorrow: what is my one small practice?</label><textarea class="st-ta" id="stTo" data-f="tomorrow"></textarea></div>
   </div>
+  ${rd&&rd.book?rqCard(rqCtxFB(rd),key,ent):""}
   ${review}${dow===0?fileBar():""}${phase2}
   <div class="card"><div class="card-h"><h3>Your journal</h3><span class="step">${done} of ${elapsed} days</span></div>
     ${hist.length?hist.map(h=>`<button type="button" class="chip" data-d="${fbEsc(h.date)}" style="text-align:left;border-radius:12px;white-space:normal">${fbEsc(fbDate(fbIdx(h.date)).toLocaleDateString(undefined,{month:"short",day:"numeric"}))} · ${fbEsc(String(h.reactive||h.steady||h.tomorrow||h.work||"Read").slice(0,70))}</button>`).join(""):'<p class="sub" style="margin:0">Your entries will appear here.</p>'}
@@ -3083,6 +3085,7 @@ function renderFB(){
   $("#stHome").onclick=()=>{STUDY.view="home";renderStudy();window.scrollTo(0,0)};$("#stPrev").onclick=()=>go(i-1);$("#stNext").onclick=()=>go(i+1);$("#stToday").onclick=()=>go(todayI);
   root.querySelectorAll("[data-d]").forEach(b=>b.onclick=()=>{STUDY.sel=b.dataset.d;renderFB();window.scrollTo(0,0)});
   const g=$("#stG2g");if(g)g.onchange=()=>{const n=parseInt(g.value,10);if(n>0)studySetG2g(n)};
+  if(rd&&rd.book)rqWire(root,rqCtxFB(rd),key,{study:"fb",date:key,private:true},ent,renderFB);
   wireFile();
 }
 
@@ -3285,6 +3288,7 @@ async function deletePlan(p){
     STUDY.view="home";STUDY.pid=null;renderStudy();toast("Study deleted");
   }catch(e){toast("Couldn’t delete just now")}
 }
+const rqCtxPlan=(p,items)=>({kind:p.kind,title:p.title,label:items.map(x=>x.label).join(", "),detail:items.map(x=>x.detail||"").filter(Boolean).join("; ")});
 function renderPlan(){
   const p=planById(STUDY.pid),root=$("#stBody");
   if(!p){STUDY.view="home";renderStudy();return}
@@ -3308,6 +3312,7 @@ function renderPlan(){
    ${items.map(it=>`<div><p style="margin:0;font-family:var(--display);font-size:1.3rem;font-weight:600">${link(it)}</p>${it.detail?`<p class="sub" style="margin:2px 0 0">${fbEsc(it.detail)}</p>`:""}</div>`).join("")}
    <label class="fu-priv"><input type="checkbox" id="plDone"> I finished this session</label>
    ${behind&&k>=cur?`<p class="status" style="margin:0">${behind} earlier session${behind>1?"s":""} not marked done. Use Prev to catch up.</p>`:""}</div>
+  ${rqCard(rqCtxPlan(p,items),key,ent)}
   <div class="card"><div class="card-h"><h3>Questions</h3></div>
    ${qs.map((q,i)=>`<div><label class="label" for="plQ${i}">${i+1}. ${fbEsc(q)}</label><textarea class="st-ta" id="plQ${i}" data-f="q${i}"></textarea></div>`).join("")}</div>
   ${upcoming.length?`<div class="card"><div class="card-h"><h3>Coming up</h3></div><ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px">${upcoming.join("")}</ul></div>`:""}
@@ -3323,6 +3328,7 @@ function renderPlan(){
   $("#plEdit").onclick=()=>{STUDY.form=newForm(p);STUDY.view="form";renderStudy();window.scrollTo(0,0)};
   const cb=$("#plCal");if(cb)cb.onclick=async()=>{cb.disabled=true;try{const id=await planCalendar(p);await store.update(p.id,{calEventId:id});p.calEventId=id;toast("Reminder added");renderPlan()}catch(e){cb.disabled=false;toast(mcp?"The reminder didn’t go through":"Calendar isn’t connected")}};
   const del=$("#plDel");del.onclick=()=>{if(del.dataset.arm){deletePlan(p)}else{del.dataset.arm="1";del.textContent="Tap again to delete";setTimeout(()=>{if(del.isConnected){del.dataset.arm="";del.textContent="Delete"}},3500)}};
+  rqWire(root,rqCtxPlan(p,items),key,base,ent,renderPlan);
   wireFile();
 }
 function renderHome(){
@@ -3364,12 +3370,12 @@ function entryInfo(e){
     const i=fbIdx(e.date),wi=Math.floor(i/7),wk=FB_WEEKS[wi];if(!wk)return null;
     const [ref,q]=wk.d[i%7].split("|"),d=fbDate(i);
     return {d,key:"fb|"+wi,label:"WEEK "+(wi+1)+" · Friedman & Bowen · "+wk.t,head:fmtDayY(d)+" · Day "+(i+1),
-      lines:[["Scripture",ref],["Question",q],["At work",e.work],["Reactive",e.reactive],["Steady",e.steady],["Tomorrow",e.tomorrow],...FB_REVIEW.map((r,k)=>["Sunday review: "+r,e["rv"+(k+1)]]),["Read",e.readDone?"yes":""]]};
+      lines:[["Scripture",ref],["Question",q],["At work",e.work],["Reactive",e.reactive],["Steady",e.steady],["Tomorrow",e.tomorrow],...FB_REVIEW.map((r,k)=>["Sunday review: "+r,e["rv"+(k+1)]]),...rqLines(e),["Read",e.readDone?"yes":""]]};
   }
   const p=planById(e.planId);if(!p)return null;
   const d=sessDate(p,e.k),n=wkNum(p,d),qs=p.questions&&p.questions.length?p.questions:(KIND_Q[p.kind]||KIND_Q.other);
   return {d,key:p.id+"|"+n,label:(p.cadence==="monthly"?"MONTH ":"WEEK ")+n+" · "+p.title,head:fmtDayY(d)+" · Session "+(e.k+1),
-    lines:[["Read",sessItems(p,e.k).map(x=>x.label).join(", ")],...qs.map((q,i)=>[q,e["q"+i]]),["Finished",e.done?"yes":""]]};
+    lines:[["Read",sessItems(p,e.k).map(x=>x.label).join(", ")],...rqLines(e),...qs.map((q,i)=>[q,e["q"+i]]),["Finished",e.done?"yes":""]]};
 }
 function filePending(cut){
   const t=cut||(()=>{const x=new Date();x.setHours(23,59,59,0);return x})();
@@ -3415,6 +3421,71 @@ function studyAuto(){
   const cut=filingCutoff();if(!filePending(cut).length)return;
   studyAutoT=Date.now();studyFile(true,cut);
 }
+/* ---- Questions that come from what is being read ---- */
+STUDY.rq={key:"",photos:[],text:"",busy:false,open:false};
+const RQ_N=4;
+function rqState(key){if(STUDY.rq.key!==key)STUDY.rq={key,photos:[],text:"",busy:false,open:false};return STUDY.rq}
+function rqPrompt(ctx,nImg,text){
+  const what=ctx.kind==="bible"?"Bible passage":ctx.kind==="book"?"book":"study material";
+  const bibleNote=ctx.kind==="bible"&&!nImg&&!text?"This is a Bible passage. Base the questions on what this passage actually says.\n":"";
+  return `You help a thoughtful reader ask good questions while reading.
+Type: ${what}. Source: "${ctx.title}". Section: "${ctx.label}"${ctx.detail?" ("+ctx.detail+")":""}.
+${nImg?"The attached "+nImg+" photo(s) are the pages being read right now. Base every question ONLY on what is visible on those pages.\n":""}${text?"The reader typed or pasted this from the reading: \"\"\""+text.slice(0,6000)+"\"\"\"\nBase every question on it.\n":""}${bibleNote}Write exactly ${RQ_N} questions in this order:
+1. Observation: what the text actually says, or what stands out.
+2. Meaning: why it says this, or what it means.
+3. Challenge: where it confronts or corrects an assumption I hold.
+4. Response: what I will do, pray or change this week.
+Each question is one plain sentence and points to something specific in this reading (a person, phrase, idea or claim), not a generic prompt.
+Never invent quotes, page numbers or claims. If no pages or text were supplied and this is not a Bible passage, you cannot know what the section says: write the questions from the section title and the general subject of the book only, and set "grounded" to false.
+Return JSON only: {"questions":[string,string,string,string],"grounded":true or false}`;
+}
+async function rqGenerate(ctx,key,base,rerender){
+  const s=rqState(key),st=$("#rqStatus"),typed=(s.text||"").trim();
+  if(s.busy)return;
+  if(!sampleFn){if(st)st.textContent="Question help isn’t available right now.";return}
+  s.busy=true;const btn=$("#rqGo");if(btn)btn.disabled=true;
+  if(st)st.textContent=s.photos.length?"Reading your pages…":"Writing questions for this reading…";
+  try{
+    const opts={modelTier:"default",cache:false};
+    if(s.photos.length)opts.images=s.photos.slice(0,Math.min(3,maxP())).map(p=>p.blob);
+    const r=await sampleFn.json(rqPrompt(ctx,Math.min(3,Math.min(maxP(),s.photos.length)),typed),opts);
+    const qs=((r&&r.questions)||[]).map(x=>String(x||"").trim().slice(0,240)).filter(Boolean).slice(0,RQ_N);
+    if(!qs.length){s.busy=false;if(btn)btn.disabled=false;if(st)st.textContent="I couldn’t make questions from that. Try a clearer photo or paste a few lines.";return}
+    const grounded=!!(s.photos.length||typed||ctx.kind==="bible")&&r.grounded!==false;
+    studyPatch(key,base,{gq:qs,gqg:grounded,gqs:s.photos.length?"photo":typed?"text":ctx.kind==="bible"?"passage":"title"});
+    await studyFlush(key);
+    s.photos=[];s.text="";s.busy=false;s.open=false;
+    rerender();
+  }catch(e){s.busy=false;if(btn)btn.disabled=false;if(st)st.textContent="That didn’t work just now. Try again in a moment."}
+}
+function rqCard(ctx,key,ent){
+  const s=rqState(key),has=Array.isArray(ent.gq)&&ent.gq.length;
+  const photoOK=!!sampleFn&&!!photoCaps;
+  const hint=ctx.kind==="bible"?"Questions come from the passage itself.":"For the best questions, add a photo of the page you are reading, or paste a few lines. Without that, I can only work from the chapter title.";
+  const qa=has?ent.gq.map((q,i)=>`<div><label class="label" for="rqA${i}">${i+1}. ${fbEsc(q)}</label><textarea class="st-ta" id="rqA${i}" data-f="ga${i}"></textarea></div>`).join(""):"";
+  const note=has&&ent.gqg===false?`<p class="status" style="margin:0">These come from the chapter title only. Add a page photo and tap New questions for ones from the text itself.</p>`:"";
+  const tools=(!has||s.open)?`
+   ${ctx.kind==="bible"?"":`<div class="row">${photoOK?`<input type="file" id="rqCam" accept="image/*" capture="environment" class="sr-only"><input type="file" id="rqPick" accept="image/*" multiple class="sr-only"><button type="button" class="btn ghost" id="rqCamBtn">Photo of the page</button><button type="button" class="btn ghost" id="rqPickBtn">Choose photos</button>`:""}</div>
+   ${s.photos.length?`<div class="row">${s.photos.map((p,i)=>`<span style="position:relative"><img src="${p.url}" alt="Page ${i+1}" style="width:56px;height:74px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button type="button" class="icon" data-rqrm="${i}" aria-label="Remove photo ${i+1}" style="position:absolute;top:-6px;right:-6px">×</button></span>`).join("")}</div>`:""}
+   <textarea class="st-ta" id="rqText" placeholder="Or paste or type a few lines you just read"></textarea>`}
+   <button type="button" class="btn" id="rqGo">${has?"New questions":s.photos.length||s.text?"Questions from my reading":"Questions for this reading"}</button>`:`<button type="button" class="btn ghost" id="rqMore">New questions</button>`;
+  return `<div class="card"><div class="card-h"><h3>Questions from this reading</h3></div>
+   <p class="status" style="margin:0">${has?"":hint}</p>${qa}${note}${tools}<p class="status" id="rqStatus" aria-live="polite" style="margin:0"></p></div>`;
+}
+function rqWire(root,ctx,key,base,ent,rerender){
+  root.querySelectorAll("[data-f^=ga]").forEach(el=>{el.value=ent[el.dataset.f]||"";el.oninput=()=>studyPatch(key,base,{[el.dataset.f]:el.value})});
+  const s=rqState(key);
+  const more=$("#rqMore");if(more)more.onclick=()=>{s.open=true;rerender()};
+  const ta=$("#rqText");if(ta){ta.value=s.text||"";ta.oninput=()=>{s.text=ta.value;const g=$("#rqGo");if(g&&!ent.gq)g.textContent=ta.value.trim()||s.photos.length?"Questions from my reading":"Questions for this reading"}}
+  const add=async files=>{for(const f of files){if(s.photos.length>=3)break;try{const blob=await shrink(f);s.photos.push({blob,url:URL.createObjectURL(blob)})}catch(e){}}rerender()};
+  const cam=$("#rqCam"),pick=$("#rqPick"),cb=$("#rqCamBtn"),pb=$("#rqPickBtn");
+  if(cam&&cb){cb.onclick=()=>cam.click();cam.onchange=()=>add([...cam.files])}
+  if(pick&&pb){pb.onclick=()=>pick.click();pick.onchange=()=>add([...pick.files])}
+  root.querySelectorAll("[data-rqrm]").forEach(b=>b.onclick=()=>{s.photos.splice(+b.dataset.rqrm,1);rerender()});
+  const go=$("#rqGo");if(go)go.onclick=()=>rqGenerate(ctx,key,base,rerender);
+}
+
+const rqLines=e=>(Array.isArray(e.gq)?e.gq.map((q,i)=>["Reading question: "+q,e["ga"+i]]):[]);
 
 /* ---------- storage ---------- */
 function setNotes(arr){STUDY.entries=arr.filter(n=>n.study==="fb"||n.study==="pe");STUDY.plans=arr.filter(n=>n.study==="plan");STUDY.set=arr.find(n=>n.study==="fb-set")||null;arr=arr.filter(n=>!n.study);state.notes=arr.sort((a,b)=>b.createdAt-a.createdAt);renderAll();if(WK.cal)matchWeek()}
