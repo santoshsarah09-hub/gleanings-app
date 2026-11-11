@@ -362,7 +362,7 @@ function gemFetch_(model, key, body) {
   });
 }
 function setGeminiKey(key) {
-  key = String(key || '').replace(/[\s​-‍﻿]+/g, '');
+  key = String(key || '').replace(/[\s\u200B-\u200D\uFEFF]+/g, '');
   if (key.length < 20) throw new Error('[bad_request] That does not look like a Gemini API key. Create one at aistudio.google.com → Get API key.');
   const body = { contents: [{ role: 'user', parts: [{ text: 'Say ok' }] }], generationConfig: { maxOutputTokens: 20 } };
   let last = '';
