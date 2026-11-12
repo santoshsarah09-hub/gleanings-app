@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Set up Gleanings</title>
+<meta name="description" content="How to set up your own private copy of Gleanings in your Google account.">
+<link rel="icon" href="icon-192.png">
+<style>
+:root{--bg:#F4F5F8;--card:#fff;--ink:#141C2F;--muted:#5d6577;--line:#E2E5EC;--navy:#17213A;--gold:#A87A22;--gold-soft:#F6EEDC;--warn:#8a3b12;--warn-soft:#fff3ea}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1524;--card:#18203a;--ink:#EEF0F6;--muted:#a7aec0;--line:#2a3352;--gold:#D9AE57;--gold-soft:#2a2414;--warn:#F5B69A;--warn-soft:#2b1a12}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{background:var(--navy);color:#F4F1E8;padding:28px 16px 24px}
+header .w,main{max-width:720px;margin:0 auto}
+h1{margin:0 0 6px;font-size:1.9rem;letter-spacing:-.01em}
+header p{margin:0;opacity:.85}
+main{padding:20px 16px 60px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 18px 14px;margin:0 0 14px}
+.card h2{margin:0 0 8px;font-size:1.15rem;display:flex;gap:10px;align-items:baseline}
+.n{flex:none;display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--gold);color:#fff;font-size:.9rem;font-weight:700}
+ol,ul{margin:6px 0 8px;padding-left:22px}
+li{margin:4px 0}
+code,.k{background:var(--gold-soft);border-radius:6px;padding:1px 6px;font-size:.92em;word-break:break-word}
+a{color:var(--gold);font-weight:600}
+.note{background:var(--gold-soft);border-radius:12px;padding:10px 14px;font-size:.95rem;margin:10px 0 4px}
+.warn{background:var(--warn-soft);color:var(--warn);border-radius:12px;padding:10px 14px;font-size:.95rem;margin:10px 0 4px}
+.muted{color:var(--muted);font-size:.92rem}
+.big a{display:inline-block;margin:4px 0;padding:10px 16px;border-radius:999px;background:var(--navy);color:#F4F1E8;text-decoration:none}
+@media (prefers-color-scheme:dark){.big a{background:var(--gold);color:#1b1407}}
+</style>
+</head>
+<body>
+<header><div class="w">
+  <h1>Set up your own Gleanings</h1>
+  <p>A pocket notebook for stories, illustrations, quotes, meetings and follow-ups. About 15 minutes, once, on a computer.</p>
+</div></header>
+<main>
+
+<div class="card">
+  <h2>Before you start</h2>
+  <ul>
+    <li><b>It's yours alone.</b> Gleanings runs in <i>your own</i> Google account. Your notes go to a folder in your own Drive. Nobody else can see them, including the person who shared this with you.</li>
+    <li><b>You need:</b> a Google (Gmail) account, a computer for this setup, and your phone.</li>
+    <li><b>AI is optional.</b> Without it, you pick the type of each note yourself. With a key (step 8), Gleanings sorts and tidies notes and reads photos of pages for you.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2><span class="n">1</span>Create your script</h2>
+  <ol>
+    <li>On your computer, go to <a href="https://script.google.com" target="_blank" rel="noopener">script.google.com</a> and sign in with your Google account.</li>
+    <li>Click <span class="k">New project</span>. At the top, click <span class="k">Untitled project</span> and rename it <b>Gleanings</b>.</li>
+  </ol>
+</div>
+
+<div class="card">
+  <h2><span class="n">2</span>Paste the code</h2>
+  <ol>
+    <li>Open the code: <a href="https://raw.githubusercontent.com/santoshsarah09-hub/gleanings-app/main/share/Code.gs" target="_blank" rel="noopener">Code.gs</a>. Select everything (<span class="k">Ctrl+A</span>, or <span class="k">⌘A</span> on a Mac) and copy it.</li>
+    <li>Back in your script, click into <span class="k">Code.gs</span>, select everything there, delete it, and paste. Click the <b>Save</b> icon.</li>
+    <li>Click the <b>gear (Project Settings)</b> on the left and tick <span class="k">Show "appsscript.json" manifest file in editor</span>.</li>
+    <li>Go back to the editor (the <span class="k">&lt; &gt;</span> icon) and open <span class="k">appsscript.json</span>. Open <a href="https://raw.githubusercontent.com/santoshsarah09-hub/gleanings-app/main/share/appsscript.json" target="_blank" rel="noopener">appsscript.json</a>, copy all of it, replace everything in that file, and <b>Save</b>.</li>
+  </ol>
+</div>
+
+<div class="card">
+  <h2><span class="n">3</span>Run firstSetup</h2>
+  <ol>
+    <li>In the toolbar, choose <span class="k">firstSetup</span> from the function menu and click <b>Run</b>.</li>
+    <li>Click <span class="k">Review permissions</span> and choose your account.</li>
+    <li>Google will say <i>"Google hasn't verified this app."</i> That is normal: it's your own script, which only you use. Click <span class="k">Advanced</span>, then <span class="k">Go to Gleanings (unsafe)</span>, then <span class="k">Allow</span>.</li>
+  </ol>
+  <p class="muted">Gleanings asks to use your Drive, Docs, Sheets and Calendar so it can file your notes and add follow-ups. It runs only inside your own account.</p>
+</div>
+
+<div class="card">
+  <h2><span class="n">4</span>Copy your setup code</h2>
+  <ol>
+    <li>When it finishes, the <b>Execution log</b> opens at the bottom. (If not, click <span class="k">Execution log</span>.)</li>
+    <li>It shows <b>Your one-time SETUP CODE</b>, like <span class="k">ABCD-2345</span>. Write it down. It works for 48 hours.</li>
+    <li>It also shows a link to your new <b>Gleanings</b> folder in Drive, with your own Master Resources, Meeting Notes and logs.</li>
+  </ol>
+</div>
+
+<div class="card">
+  <h2><span class="n">5</span>Deploy it</h2>
+  <ol>
+    <li>Click <span class="k">Deploy</span> → <span class="k">New deployment</span>.</li>
+    <li>Click the gear next to "Select type" and choose <span class="k">Web app</span>.</li>
+    <li>Set <b>Execute as: Me</b> and <b>Who has access: Anyone</b>, then click <b>Deploy</b>.</li>
+    <li>Copy the <b>Web app URL</b> (it ends in <code>/exec</code>). This is your server link.</li>
+  </ol>
+  <div class="note"><b>Why "Anyone"?</b> So your phone app can reach it. Without your password, it opens nothing: every request is checked, and after 10 wrong tries it locks for 15 minutes.</div>
+</div>
+
+<div class="card">
+  <h2><span class="n">6</span>Open it on your phone and choose your password</h2>
+  <p class="big"><a href="https://santoshsarah09-hub.github.io/gleanings-app/share/">Open Gleanings</a></p>
+  <ol>
+    <li>Open that link on your phone (send it to yourself by text or email).</li>
+    <li>Paste your <b>server link</b> and tap <b>Next</b>.</li>
+    <li>On the welcome screen, enter your <b>setup code</b> and your first name, then <b>choose your own password</b> (at least 8 characters). Tap <b>Set up my Gleanings</b>.</li>
+  </ol>
+  <div class="note">Write your password down somewhere safe. If you ever forget it, open your script, choose <span class="k">resetPassword</span> and click Run. Your notes are kept, and you get a new setup code to choose a new password.</div>
+</div>
+
+<div class="card">
+  <h2><span class="n">7</span>Put it on your home screen</h2>
+  <ul>
+    <li><b>Android (Chrome):</b> tap <span class="k">⋮</span> → <span class="k">Install app</span> (or <span class="k">Add to Home screen</span>).</li>
+    <li><b>iPhone (Safari):</b> tap <span class="k">Share</span> → <span class="k">Add to Home Screen</span>.</li>
+  </ul>
+  <p class="muted">It opens full-screen like any app. Updates arrive on their own.</p>
+</div>
+
+<div class="card">
+  <h2><span class="n">8</span>Optional: turn on AI</h2>
+  <p>In Gleanings, tap the <b>gear</b> (Settings) and paste <i>one</i> key:</p>
+  <ul>
+    <li><b>Claude</b>: create a key at <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a> → Settings → API keys (it starts with <code>sk-ant-api03-</code>). Add a little billing credit first. Light use usually costs cents a day.</li>
+    <li><b>Gemini</b>: create a key at <a href="https://aistudio.google.com" target="_blank" rel="noopener">aistudio.google.com</a> → Get API key. There is a free level. Google may use what you send on the free level to improve its products, so check its terms first.</li>
+  </ul>
+  <div class="warn"><b>Never paste a key or your password into a chat, an email or a document.</b> It goes only into Gleanings' Settings. If a key ever gets out, delete it on the site where you made it and create a new one. Be careful in the account settings there: deleting a key is different from deleting the whole account.</div>
+</div>
+
+<div class="card">
+  <h2>Keeping it safe</h2>
+  <ul>
+    <li>Don't give anyone your server link <i>and</i> password together. That would open your notes.</li>
+    <li>If your phone is lost, run <span class="k">resetPassword</span> in your script. The old password stops working at once.</li>
+    <li><b>Patient and counseling privacy:</b> keep names, rooms, diagnoses and other identifying details out of notes. Mark sensitive notes <b>Private</b>: private notes stay in your script's private settings and never go to Drive.</li>
+  </ul>
+</div>
+
+<p class="muted">Gleanings is shared freely by a friend. The code is open at <a href="https://github.com/santoshsarah09-hub/gleanings-app" target="_blank" rel="noopener">github.com/santoshsarah09-hub/gleanings-app</a>; your notes are never stored there.</p>
+</main>
+</body>
+</html>
