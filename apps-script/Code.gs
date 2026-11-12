@@ -39,7 +39,7 @@ function doGet() {
 }
 
 /* ---------------------------------------------------------------- status */
-function getStatus() {
+function getStatus_() {
   const up = PropertiesService.getUserProperties();
   return JSON.stringify({
     hasKey: provider_() === 'gemini' ? true : !!up.getProperty('ANTHROPIC_KEY'),
@@ -52,7 +52,7 @@ function getStatus() {
     privateBytes: privateBytes_()
   });
 }
-function setKey(key) {
+function setKey_(key) {
   key = String(key || '').replace(/[\s​-‍﻿]+/g, ''); // drop spaces, line breaks and invisible characters from phone pasting
   if (!/^sk-ant-/.test(key)) throw new Error('[bad_request] That does not look like an Anthropic API key (it starts with sk-ant-api03-).');
   const shape = 'Your key starts with ' + key.slice(0, 13) + '… and is ' + key.length + ' characters long. ';
@@ -79,10 +79,10 @@ function setKey(key) {
   }
   throw new Error('[tool_error] ' + last);
 }
-function clearKey() { PropertiesService.getUserProperties().deleteProperty('ANTHROPIC_KEY'); return 'ok'; }
+function clearKey_() { PropertiesService.getUserProperties().deleteProperty('ANTHROPIC_KEY'); return 'ok'; }
 
 /* -------------------------------------------------------------------- AI */
-function aiCall(reqJson) {
+function aiCall_(reqJson) {
   const req = JSON.parse(reqJson);
   if (provider_() === 'gemini') return geminiCall_(req);
   const key = PropertiesService.getUserProperties().getProperty('ANTHROPIC_KEY');
@@ -117,7 +117,7 @@ function aiCall(reqJson) {
 }
 
 /* ------------------------------------------- Drive, Docs, Calendar bridge */
-function mcpCall(server, tool, inputJson) {
+function mcpCall_(server, tool, inputJson) {
   const i = JSON.parse(inputJson || '{}');
   try {
     return JSON.stringify(route_(server, tool, i));
@@ -292,27 +292,27 @@ function find_(id) {
   try { return JSON.parse(v.slice(2).join('')); } catch (e) { return null; }
 }
 
-function dbList() {
+function dbList_() {
   const all = sheetGetAll_();
   privKeys_().forEach(function (k) { const n = privGet_(k.slice(2)); if (n) all.push(n); });
   return JSON.stringify(all);
 }
-function dbAdd(json) {
+function dbAdd_(json) {
   return withLock_(function () {
     const n = JSON.parse(json);
     n.id = n.id || ('n' + Utilities.getUuid().replace(/-/g, '').slice(0, 14));
     save_(n); return n.id;
   });
 }
-function dbSet(id, json) { return withLock_(function () { const n = JSON.parse(json); n.id = id; save_(n); return id; }); }
-function dbUpdate(id, patchJson) {
+function dbSet_(id, json) { return withLock_(function () { const n = JSON.parse(json); n.id = id; save_(n); return id; }); }
+function dbUpdate_(id, patchJson) {
   return withLock_(function () {
     const cur = find_(id); if (!cur) throw new Error('[not_found] That note no longer exists.');
     const n = Object.assign(cur, JSON.parse(patchJson)); n.id = id; save_(n); return id;
   });
 }
-function dbDelete(id) { return withLock_(function () { privDel_(id); sheetDel_(id); return id; }); }
-function dbImport(arrJson) {
+function dbDelete_(id) { return withLock_(function () { privDel_(id); sheetDel_(id); return id; }); }
+function dbImport_(arrJson) {
   return withLock_(function () {
     const arr = JSON.parse(arrJson); let k = 0;
     arr.forEach(function (n) { if (n && n.id) { save_(n); k++; } });
@@ -327,12 +327,20 @@ function photoFolder_() {
   const f = DriveApp.getFolderById(CFG.GLEAN_FOLDER).createFolder('Gleanings Photos (app)');
   sp.setProperty('PHOTO_FOLDER', f.getId()); return f;
 }
-function assetUpload(b64, type, name) {
+function assetUpload_(b64, type, name) {
   const blob = Utilities.newBlob(Utilities.base64Decode(b64), type || 'image/jpeg', name || ('page-' + Date.now() + '.jpg'));
   const f = photoFolder_().createFile(blob);
   return JSON.stringify({ id: f.getId(), url: 'https://drive.google.com/thumbnail?sz=w1600&id=' + f.getId(), sizeBytes: blob.getBytes().length, contentType: blob.getContentType() });
 }
-function assetDelete(id) { DriveApp.getFileById(id).setTrashed(true); return 'ok'; } // trash, never permanent delete
+function assetGet_(id) {
+  if (!DriveApp.getFileById(id).getParents().hasNext()) throw new Error('[not_found] Photo not found');
+  const f = DriveApp.getFileById(id), pf = photoFolder_().getId();
+  let inFolder = false; const it = f.getParents(); while (it.hasNext()) { if (it.next().getId() === pf) inFolder = true; }
+  if (!inFolder) throw new Error('[not_granted] Only Gleanings photos can be opened here.');
+  const b = f.getBlob();
+  return JSON.stringify({ type: b.getContentType() || 'image/jpeg', b64: Utilities.base64Encode(b.getBytes()) });
+}
+function assetDelete_(id) { DriveApp.getFileById(id).setTrashed(true); return 'ok'; } // trash, never permanent delete
 
 /* --------------------------------------------------------------- helpers */
 function iso_(s) {
@@ -343,7 +351,7 @@ function iso_(s) {
 function month_() { return Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM'); }
 
 /* Run this once from the editor (select "setup", press Run) to grant access. */
-function setup() { sheet_(); photoFolder_(); return getStatus(); }
+function setup() { sheet_(); photoFolder_(); return 'ok'; }
 
 /* ------------------------------------------------------------ Gemini (optional AI provider) */
 const GEM = {
@@ -361,7 +369,7 @@ function gemFetch_(model, key, body) {
     headers: { 'x-goog-api-key': key }, payload: JSON.stringify(body)
   });
 }
-function setGeminiKey(key) {
+function setGeminiKey_(key) {
   key = String(key || '').replace(/[\s\u200B-\u200D\uFEFF]+/g, '');
   if (key.length < 20) throw new Error('[bad_request] That does not look like a Gemini API key. Create one at aistudio.google.com → Get API key.');
   const body = { contents: [{ role: 'user', parts: [{ text: 'Say ok' }] }], generationConfig: { maxOutputTokens: 20 } };
@@ -382,11 +390,11 @@ function setGeminiKey(key) {
   }
   throw new Error('[tool_error] ' + last);
 }
-function clearGeminiKey() {
+function clearGeminiKey_() {
   const up = PropertiesService.getUserProperties();
   up.deleteProperty('GEMINI_KEY'); up.deleteProperty('AI_PROVIDER'); return 'ok';
 }
-function setProvider(p) {
+function setProvider_(p) {
   const up = PropertiesService.getUserProperties();
   if (p === 'gemini') {
     if (!up.getProperty('GEMINI_KEY')) throw new Error('[bad_request] Add a Gemini key first.');
@@ -463,4 +471,77 @@ function geminiCall_(req) {
     up.setProperty(k, JSON.stringify(u));
   } catch (e) {}
   return JSON.stringify(out);
+}
+
+
+/* ================================================================ secure entry point
+ * Every call from the app comes through rpc(): from the Google-sign-in link (google.script.run)
+ * or from the phone app on GitHub Pages (doPost). Nothing else on this script can be called from
+ * outside, because every other function name ends with "_" (Apps Script hides those).
+ * A call is allowed when it comes from YOU signed in to Google, or carries your phone passcode.
+ */
+const RPC_ = {
+  getStatus: getStatus_, setKey: setKey_, clearKey: clearKey_, aiCall: aiCall_, mcpCall: mcpCall_,
+  dbList: dbList_, dbAdd: dbAdd_, dbSet: dbSet_, dbUpdate: dbUpdate_, dbDelete: dbDelete_, dbImport: dbImport_,
+  assetUpload: assetUpload_, assetDelete: assetDelete_, assetGet: assetGet_,
+  setGeminiKey: setGeminiKey_, clearGeminiKey: clearGeminiKey_, setProvider: setProvider_
+};
+function ownerSession_() {
+  try {
+    const a = Session.getActiveUser().getEmail(), e = Session.getEffectiveUser().getEmail();
+    return !!a && a === e;
+  } catch (x) { return false; }
+}
+function hash_(salt, pass) {
+  return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + '|' + String(pass || ''), Utilities.Charset.UTF_8));
+}
+function passOk_(pass) {
+  const sp = PropertiesService.getScriptProperties(), h = sp.getProperty('PASS_HASH'), salt = sp.getProperty('PASS_SALT');
+  if (!h || !salt || !pass) return false;
+  return hash_(salt, pass) === h;
+}
+function auth_(pass) {
+  if (ownerSession_()) return;
+  const c = CacheService.getScriptCache(), fails = +(c.get('pass_fails') || 0);
+  if (fails >= 10) throw new Error('[rate_limited] Too many wrong passcodes. Wait 15 minutes and try again.');
+  if (passOk_(pass)) return;
+  c.put('pass_fails', String(fails + 1), 900);
+  throw new Error(PropertiesService.getScriptProperties().getProperty('PASS_HASH')
+    ? '[unauthorized] That passcode is not right.'
+    : '[unauthorized] No phone passcode has been made yet. In the script editor run makePasscode.');
+}
+function rpc(pass, fn, argsJson) {
+  auth_(pass);
+  const f = RPC_[fn];
+  if (!f) throw new Error('[bad_request] Unknown action ' + fn);
+  return f.apply(null, JSON.parse(argsJson || '[]'));
+}
+function doPost(e) {
+  let out;
+  try {
+    const b = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    out = { ok: true, result: rpc(b.pass, b.fn, JSON.stringify(b.args || [])) };
+  } catch (err) {
+    out = { ok: false, error: String((err && err.message) || err) };
+  }
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/* Run this once from the editor (select "makePasscode", press Run, then open the Execution log).
+ * It makes a strong random passcode for the phone app and shows it ONE time. Only a scrambled
+ * fingerprint of it is stored. Running it again makes a new passcode and the old one stops working. */
+function makePasscode() {
+  if (!ownerSession_()) throw new Error('Run makePasscode from the script editor while signed in as the owner.');
+  const words = ['amber','anchor','beacon','bridge','cedar','crown','dawn','ember','field','harbor','hearth','lantern','meadow','olive','orchard','pillar','psalm','river','shepherd','summit','thistle','vine','willow','zion'];
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + Utilities.getUuid() + Date.now());
+  const pick = function (i) { return words[(bytes[i] + 256) % words.length]; };
+  const num = (((bytes[10] + 256) << 8) + (bytes[11] + 256)) % 9000 + 1000;
+  const tail = Utilities.base64EncodeWebSafe(bytes.slice(16, 25)).replace(/[^A-Za-z0-9]/g, '').slice(0, 8);
+  const pass = [pick(0), pick(1), pick(2), pick(3), num, tail].join('-');
+  const salt = Utilities.getUuid();
+  const sp = PropertiesService.getScriptProperties();
+  sp.setProperty('PASS_SALT', salt); sp.setProperty('PASS_HASH', hash_(salt, pass));
+  CacheService.getScriptCache().remove('pass_fails');
+  Logger.log('Your Gleanings phone passcode (shown only this once): ' + pass);
+  return 'Passcode made. Open View → Execution log to copy it.';
 }

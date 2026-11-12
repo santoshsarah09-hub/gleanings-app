@@ -2,14 +2,68 @@
 <script>/* Gleanings standalone bridge: gives the app the same window.claude.use(...) it had inside Claude,
    but backed by your own Google Apps Script server and your own Anthropic API key. */
 (function(){
-  if(!(window.google&&google.script&&google.script.run)){return} // not inside Apps Script (local preview)
-  const GS=(fn,...args)=>new Promise((res,rej)=>{
-    google.script.run.withSuccessHandler(res).withFailureHandler(e=>{
-      const msg=String(e&&e.message||e||"");const m=msg.match(/\[(\w+)\]\s*(.*)/);
-      rej({code:m?m[1]:"tool_error",message:m?m[2]:msg});
-    })[fn](...args);
-  });
+  const inGAS=!!(window.google&&google.script&&google.script.run);
+  const onPages=/github\.io$/.test(location.hostname);
+  if(!inGAS&&!onPages){return} /* plain local preview: nothing to connect to */
+  /* how this device reaches your Google script: inside the Google link it uses your sign-in;
+     as the phone app (GitHub Pages) it uses your server link + private passcode, kept only on this device */
+  const CK="glean-conn";
+  let conn={};try{conn=JSON.parse(localStorage.getItem(CK)||"{}")||{}}catch(e){conn={}}
+  const saveConn=c=>{try{localStorage.setItem(CK,JSON.stringify(c))}catch(e){}};
+  const errOf=msg=>{msg=String(msg||"");const m=msg.match(/\[(\w+)\]\s*(.*)/);return {code:m?m[1]:"tool_error",message:m?m[2]:msg}};
+  async function post(url,pass,fn,args){
+    let r;try{r=await fetch(url,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({pass,fn,args}),redirect:"follow"})}
+    catch(e){throw {code:"offline",message:"Can't reach your Google script. Check your signal and try again."}}
+    let j;try{j=await r.json()}catch(e){throw {code:"tool_error",message:"Your Google script didn't answer properly. Check the server link."}}
+    if(!j.ok)throw errOf(j.error);return j.result;
+  }
+  const GS=(fn,...args)=>{
+    const p=inGAS?new Promise((res,rej)=>{const r=google.script.run.withSuccessHandler(res).withFailureHandler(e=>rej(errOf(e&&e.message||e)));
+        if(typeof r.rpc==="function")r.rpc(conn.pass||"",fn,JSON.stringify(args));else r[fn](...args)}) /* older server without rpc: call directly until Code.gs is updated */
+      :(conn.url?post(conn.url,conn.pass,fn,args):Promise.reject({code:"unauthorized",message:"Not connected yet"}));
+    return p.catch(e=>{if(e&&e.code==="unauthorized")showConnect(e.message);throw e});
+  };
   window.GLEAN_STANDALONE=true;
+  window.GLEAN_CONN={mode:inGAS?"google":"phone",connected:inGAS||!!conn.url,forget:()=>{saveConn({});location.reload()}};
+
+  /* ---------- connect screen (phone app) ---------- */
+  let shown=false;
+  function showConnect(why){
+    if(shown)return;shown=true;
+    const go=()=>{
+      const d=document.createElement("div");d.id="connect";d.setAttribute("role","dialog");d.setAttribute("aria-modal","true");d.setAttribute("aria-label","Connect Gleanings");
+      d.style.cssText="position:fixed;inset:0;z-index:99;background:#17213A;color:#F4F1E8;display:flex;align-items:center;justify-content:center;padding:20px;font:16px/1.5 system-ui,-apple-system,sans-serif;overflow:auto";
+      const box=document.createElement("div");box.style.cssText="width:100%;max-width:420px;display:flex;flex-direction:column;gap:12px";
+      const h=document.createElement("h2");h.textContent=inGAS?"Enter your phone passcode":"Connect Gleanings";h.style.cssText="margin:0;font-size:1.5rem";
+      const p1=document.createElement("p");p1.style.margin="0";p1.style.opacity=".85";
+      p1.textContent=inGAS?"Google didn't confirm your sign-in here, so the app needs your passcode.":"This phone app talks to your own Google script. Enter its link and your private passcode once; they stay only on this device.";
+      const mk=(lab,type,val,ph)=>{const l=document.createElement("label");l.style.cssText="display:flex;flex-direction:column;gap:6px;font-weight:600";l.textContent=lab;const i=document.createElement("input");i.type=type;i.value=val||"";i.placeholder=ph;i.autocomplete="off";i.style.cssText="font:16px system-ui;padding:12px;border-radius:12px;border:1px solid #5a6582;background:#0f1729;color:#fff";l.append(i);return [l,i]};
+      const [lu,iu]=mk("Server link (ends in /exec)","url",conn.url,"https:"+String.fromCharCode(47,47)+"script.google.com/macros/s/…/exec");
+      const [lp,ip]=mk("Passcode","password",conn.pass,"word-word-word-word-1234-xxxx");
+      const msg=document.createElement("p");msg.style.cssText="margin:0;color:#F5B69A;min-height:1.2em";msg.textContent=why&&why!=="Not connected yet"?why:"";
+      const b=document.createElement("button");b.type="button";b.textContent="Connect";b.style.cssText="font:700 16px system-ui;padding:14px;border-radius:999px;border:0;background:#C99A3D;color:#1b1407;cursor:pointer";
+      const help=document.createElement("p");help.style.cssText="margin:0;font-size:.85rem;opacity:.75";
+      help.textContent="Server link: script.google.com → Gleanings → Deploy → Manage deployments → the phone-app deployment's Web app URL. Passcode: run makePasscode in the script editor and copy it from the Execution log.";
+      b.onclick=async()=>{const c={url:(iu.value||"").trim(),pass:(ip.value||"").trim()};
+        if(!inGAS&&!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(c.url)){msg.textContent="That link should look like script.google.com/macros/s/…/exec";return}
+        if(!c.pass){msg.textContent="Enter your passcode";return}
+        b.disabled=true;b.textContent="Checking…";msg.textContent="";
+        try{if(inGAS){saveConn({pass:c.pass});location.reload();return}
+          await post(c.url,c.pass,"getStatus",[]);saveConn(c);location.reload()}
+        catch(e){msg.textContent=e.message||"That didn't work.";b.disabled=false;b.textContent="Connect"}};
+      box.append(h,p1);if(!inGAS)box.append(lu);box.append(lp,msg,b,help);d.append(box);document.body.append(d);(inGAS?ip:(conn.url?ip:iu)).focus();
+    };
+    if(document.body)go();else document.addEventListener("DOMContentLoaded",go);
+  }
+  if(onPages&&!conn.url)showConnect("");
+
+  /* ---------- install as an app (phone app only) ---------- */
+  if(onPages){
+    const head=document.head||document.getElementsByTagName("head")[0];
+    [["manifest","manifest.webmanifest"],["apple-touch-icon","apple-touch-icon.png"],["icon","icon-192.png"]].forEach(([rel,href])=>{const l=document.createElement("link");l.rel=rel;l.href=href;head.appendChild(l)});
+    [["apple-mobile-web-app-capable","yes"],["mobile-web-app-capable","yes"],["apple-mobile-web-app-title","Gleanings"],["apple-mobile-web-app-status-bar-style","black-translucent"]].forEach(([n,c])=>{const m=document.createElement("meta");m.name=n;m.content=c;head.appendChild(m)});
+    if("serviceWorker" in navigator)window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js").catch(()=>{})});
+  }
   const b64=blob=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=rej;r.readAsDataURL(blob)});
 
   /* ---------- AI ---------- */
@@ -90,7 +144,15 @@
 
   const caps={sample,mcp,db,user,assets};
   window.claude={use:async name=>caps[name]||null};
-  window.GLEAN_BLOB=id=>"https://drive.google.com/thumbnail?sz=w1600&id="+id;
+  const PIX="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+  const blobs={},loading={};
+  window.GLEAN_BLOB=id=>{
+    if(inGAS)return "https:"+String.fromCharCode(47,47)+"drive.google.com/thumbnail?sz=w1600&id="+id;
+    if(blobs[id])return blobs[id];
+    if(!loading[id]){loading[id]=GS("assetGet",id).then(r=>{const j=JSON.parse(r);blobs[id]="data:"+j.type+";base64,"+j.b64;
+      document.querySelectorAll("img").forEach(im=>{if(im.src===PIX+"#"+id)im.src=blobs[id]})}).catch(()=>{})}
+    return PIX+"#"+id;
+  };
 
   /* ---------- settings: API key, usage, import ---------- */
   window.GLEAN_SETTINGS={
@@ -104,13 +166,7 @@
   };
 })();
 </script>
-<script>
-if(!(window.google&&google.script)&&/github\.io$/.test(location.hostname)){document.addEventListener("DOMContentLoaded",function(){
-  var d=document.createElement("div");d.setAttribute("role","alert");
-  d.style.cssText="position:fixed;inset:0;z-index:99;background:rgba(10,14,28,.92);color:#fff;display:flex;align-items:center;justify-content:center;padding:24px;font:16px/1.5 system-ui,sans-serif";
-  d.innerHTML='<div style="max-width:420px"><h2 style="margin:0 0 10px;font-size:1.4rem">Open Gleanings from your Google link</h2><p style="margin:0 0 10px">This GitHub page is only where the app\'s code is kept. Here it cannot reach your Drive, Calendar or AI key, and notes would stay on this device only.</p><p style="margin:0">Open your Apps Script web app link instead: script.google.com &rarr; Gleanings &rarr; Deploy &rarr; Manage deployments &rarr; the Web app URL ending in <b>/exec</b>. Add that one to your home screen.</p></div>';
-  document.body.appendChild(d)})}
-</script>
+
 <title>Gleanings</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1585,6 +1641,8 @@ async function renderSettings(){
     const fi=document.createElement("input");fi.type="file";fi.accept=".json,application/json";
     fi.onchange=async()=>{const f=fi.files&&fi.files[0];if(!f)return;try{const arr=JSON.parse(await f.text());const list=(Array.isArray(arr)?arr:arr.notes||[]).map(n=>({...n,photos:[],photo:null}));toast("Importing "+list.length+" notes…");const k2=await GLEAN_SETTINGS.importNotes(list);toast(`Imported ${k2} notes`)}catch(e){toast("That file couldn't be read.")}};
     im.append(fi);kids.push(im);
+    if(window.GLEAN_CONN){const cn=elx("div","set-row");cn.append(elx("b",null,"This device"),elx("p",null,GLEAN_CONN.mode==="phone"?"Phone app, connected with your private passcode. If this phone is lost, run makePasscode again in the script editor: the old passcode stops working at once.":"Opened through your Google link and your Google sign-in."));
+      if(GLEAN_CONN.mode==="phone"){const fb=elx("button","btn ghost","Forget passcode on this device");fb.type="button";fb.onclick=()=>{if(confirm("Forget the passcode on this device? You'll need to enter it again."))GLEAN_CONN.forget()};cn.append(fb)}kids.push(cn)}
     if(st&&st.url){const l=elx("div","set-row");l.append(elx("b",null,"Your app link"),elx("p",null,"Open this on your phone and choose Add to Home Screen."));const a=document.createElement("a");a.href=st.url;a.target="_blank";a.rel="noopener";a.textContent=st.url;a.style.wordBreak="break-all";l.append(a);kids.push(l)}
   }else{
     const ex=elx("div","set-row");ex.append(elx("b",null,"Export all notes"),elx("p",null,`Saves all ${state.notes.length} notes to one file on this device, for moving to the standalone Gleanings app. The file includes your private notes: keep it on your device and delete it after you import.`));
